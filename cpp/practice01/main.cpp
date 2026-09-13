@@ -99,14 +99,17 @@ int main() try {
         passDescriptor.colorAttachmentCount = 1;
         passDescriptor.colorAttachments = &colorAttachment;
 
-        WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(commandEncoder, &passDescriptor);
+        WGPURenderPassEncoder renderPassEncoder = wgpuCommandEncoderBeginRenderPass(commandEncoder, &passDescriptor);
 
-        wgpuRenderPassEncoderEnd(renderPass);
+        wgpuRenderPassEncoderSetPipeline(renderPassEncoder, renderPipeline);
+        wgpuRenderPassEncoderDraw(renderPassEncoder, /*vertexCount=*/3, /*instanceCount=*/1, /*firstVertex=*/0, /*firstInstance=*/0);
+
+        wgpuRenderPassEncoderEnd(renderPassEncoder);
 
         WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, nullptr);
         wgpuQueueSubmit(app.queue(), 1, &commandBuffer);
 
-        wgpuRenderPassEncoderRelease(renderPass);
+        wgpuRenderPassEncoderRelease(renderPassEncoder);
         wgpuCommandBufferRelease(commandBuffer);
         wgpuCommandEncoderRelease(commandEncoder);
 
