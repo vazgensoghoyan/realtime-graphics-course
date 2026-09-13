@@ -11,16 +11,49 @@ namespace {
 
     std::filesystem::path const projectRoot = PROJECT_ROOT;
 
+    WGPUStringView toWGPUStringView(std::string_view str) {
+        return {str.data(), str.size()};
+    }
+
     WGPUShaderModule initShaderModule(WgpuApp& app, std::string_view shaderName) {
         const std::string shaderCodeText = loadFile(projectRoot / shaderName);
 
         WGPUShaderSourceWGSL shaderSource = WGPU_SHADER_SOURCE_WGSL_INIT;
-        shaderSource.code = {shaderCodeText.c_str(), shaderCodeText.size()};
+        shaderSource.code = toWGPUStringView(shaderCodeText);
 
         WGPUShaderModuleDescriptor shaderModuleDescriptor = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
         shaderModuleDescriptor.nextInChain = &shaderSource.chain;
 
-        return wgpuDeviceCreateShaderModule(app.device(), &shaderModuleDescriptor);;
+        return wgpuDeviceCreateShaderModule(app.device(), &shaderModuleDescriptor);
+    }
+
+    WGPURenderPipeline initRenderPipeline(WgpuApp& app, WGPUShaderModule shaderModule) {
+        WGPUVertexState vertexState = WGPU_VERTEX_STATE_INIT;
+        vertexState.module = shaderModule;
+        vertexState.entryPoint = toWGPUStringView("vertexMain");
+
+        WGPUColorTargetState colorTarget = WGPU_COLOR_TARGET_STATE_INIT;
+        colorTarget.format = app.surfaceFormat();
+        colorTarget.writeMask = WGPUColorWriteMask_All;
+
+        WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
+        fragmentState.module = shaderModule;
+        fragmentState.entryPoint = toWGPUStringView("fragmentMain");
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &colorTarget;
+
+        WGPUPrimitiveState primitiveState = WGPU_PRIMITIVE_STATE_INIT;
+        primitiveState.topology = WGPUPrimitiveTopology_TriangleList;
+
+        WGPURenderPipelineDescriptor pipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+        pipelineDescriptor.vertex = vertexState;
+        pipelineDescriptor.fragment = &fragmentState;
+        pipelineDescriptor.primitive = primitiveState;
+
+        return wgpuDeviceCreateRenderPipeline(
+            app.device(),
+            &pipelineDescriptor
+        );
     }
 
 } // namespace
@@ -29,6 +62,7 @@ int main() try {
     WgpuApp app("Practice01", 1280, 720, false);
 
     WGPUShaderModule shaderModule = initShaderModule(app, "shader.wgsl");
+    WGPURenderPipeline renderPipeline = initRenderPipeline(app, shaderModule);
 
     bool running = true;
     while (running) {
@@ -84,6 +118,7 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
 
 } catch (const std::exception& e) {
