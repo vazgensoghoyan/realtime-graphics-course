@@ -15,10 +15,12 @@ const COLORS = array<vec4f, 3>(
     vec4f(1.00, 0.84, 0.40, 1.0),
 );
 
+var<immediate> scale: f32;
+
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
     return VertexOut(
-        vec4f(POSITIONS[vertexIndex], 0.0, 1.0),
+        vec4f(POSITIONS[vertexIndex] * scale, 0.0, 1.0),
         COLORS[vertexIndex]
     );
 }
