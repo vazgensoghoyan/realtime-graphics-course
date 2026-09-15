@@ -15,12 +15,16 @@ const COLORS = array<vec4f, 3>(
     vec4f(1.00, 0.84, 0.40, 1.0),
 );
 
-var<immediate> IMM_MATRIX: mat4x4<f32>;
+struct Immediate {
+    transform: mat4x4<f32>,
+    view: mat4x4<f32>,
+}
+var<immediate> IMM: Immediate;
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
     return VertexOut(
-        IMM_MATRIX * vec4f(POSITIONS[vertexIndex], 0.0, 1.0),
+        vec4f(POSITIONS[vertexIndex], 0.0, 1.0) * IMM.transform * IMM.view,
         COLORS[vertexIndex]
     );
 }

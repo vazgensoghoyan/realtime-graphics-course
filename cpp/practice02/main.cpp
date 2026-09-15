@@ -29,7 +29,7 @@ namespace {
     WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                       WGPUTextureFormat surfaceFormat) {
         WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-        pipelineLayoutDescriptor.immediateSize = 64; // matrix 4x4 of floats
+        pipelineLayoutDescriptor.immediateSize = 128; // 2 matrices 4x4 of floats
 
         WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -119,17 +119,33 @@ int main() try {
         // setting immediates (for now only 'scale')
         const float scale = 0.5f;
         const float angle = time;
+
         const float cosScaled = std::cos(angle) * scale;
         const float sinScaled = std::sin(angle) * scale;
+
         const float xOffset = time / 10;
         const float yOffset = time / 10;
-        const float matrix[16] = {
-            cosScaled, sinScaled, 0, 0,
-            -sinScaled, cosScaled, 0, 0,
+
+        const float matrixTransform[16] = {
+            cosScaled, -sinScaled, 0, xOffset,
+            sinScaled, cosScaled, 0, yOffset,
             0, 0, 0, 0,
-            xOffset, yOffset, 0, 1,
+            0, 0, 0, 1,
         };
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &matrix, sizeof(matrix));
+
+        const int width = app.width();
+        const int height = app.height();
+        const float aspectRatio = static_cast<float>(height) / width;
+
+        const float matrixView[16] = {
+            aspectRatio, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+        };
+
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &matrixTransform, sizeof(matrixTransform));
+        wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(matrixTransform), &matrixView, sizeof(matrixView));
         // immediates setting is done
 
         wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
