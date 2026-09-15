@@ -56,6 +56,26 @@ namespace {
         return renderPipeline;
     }
 
+    void handleMoving(std::unordered_set<SDL_Keycode>& keydown, float& xOffset, float& yOffset) {
+        float offset = 0.005f;
+        if (keydown.contains(SDLK_F)) { // dont know why, SDLK_BACKSPACE didnt work :(
+            offset *= 5;
+        }
+
+        if (keydown.contains(SDLK_LEFT)) {
+            xOffset -= offset;
+        }
+        if (keydown.contains(SDLK_RIGHT)) {
+            xOffset += offset;
+        }
+        if (keydown.contains(SDLK_DOWN)) {
+            yOffset -= offset;
+        }
+        if (keydown.contains(SDLK_UP)) {
+            yOffset += offset;
+        }
+    }
+
 } // namespace
 
 int main() try {
@@ -68,6 +88,9 @@ int main() try {
     float time = 0.f;
 
     std::unordered_set<SDL_Keycode> keydown;
+
+    float xOffset = 0;
+    float yOffset = 0;
 
     bool running = true;
     while (running) {
@@ -117,14 +140,13 @@ int main() try {
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
         // setting immediates (for now only 'scale')
-        const float scale = 0.5f;
+        constexpr float scale = 0.5f;
         const float angle = time;
 
         const float cosScaled = std::cos(angle) * scale;
         const float sinScaled = std::sin(angle) * scale;
 
-        const float xOffset = time / 10;
-        const float yOffset = time / 10;
+        handleMoving(keydown, xOffset, yOffset);
 
         const float matrixTransform[16] = {
             cosScaled, -sinScaled, 0, xOffset,
