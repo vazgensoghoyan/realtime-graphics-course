@@ -9,48 +9,52 @@
 #include <iostream>
 #include <unordered_set>
 
-static std::filesystem::path const projectRoot = PROJECT_ROOT;
+namespace {
 
-WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const &path) {
-    auto const source = loadFile(path);
+    static std::filesystem::path const projectRoot = PROJECT_ROOT;
 
-    WGPUShaderSourceWGSL shaderSourceWGSL = WGPU_SHADER_SOURCE_WGSL_INIT;
-    shaderSourceWGSL.code = {source.data(), source.size()};
+    WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const& path) {
+        auto const source = loadFile(path);
 
-    WGPUShaderModuleDescriptor shaderModuleDescriptor = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
-    shaderModuleDescriptor.nextInChain = &shaderSourceWGSL.chain;
+        WGPUShaderSourceWGSL shaderSourceWGSL = WGPU_SHADER_SOURCE_WGSL_INIT;
+        shaderSourceWGSL.code = {source.data(), source.size()};
 
-    return wgpuDeviceCreateShaderModule(device, &shaderModuleDescriptor);
-}
+        WGPUShaderModuleDescriptor shaderModuleDescriptor = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
+        shaderModuleDescriptor.nextInChain = &shaderSourceWGSL.chain;
 
-WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
-                                  WGPUTextureFormat surfaceFormat) {
-    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        return wgpuDeviceCreateShaderModule(device, &shaderModuleDescriptor);
+    }
 
-    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+    WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
+                                      WGPUTextureFormat surfaceFormat) {
+        WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
 
-    WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
-    colorTargetState.format = surfaceFormat;
-    colorTargetState.writeMask = WGPUColorWriteMask_All;
+        WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
-    WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
-    fragmentState.module = shaderModule;
-    fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
-    fragmentState.targetCount = 1;
-    fragmentState.targets = &colorTargetState;
+        WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
+        colorTargetState.format = surfaceFormat;
+        colorTargetState.writeMask = WGPUColorWriteMask_All;
 
-    WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    renderPipelineDescriptor.layout = pipelineLayout;
-    renderPipelineDescriptor.vertex.module = shaderModule;
-    renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
-    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    renderPipelineDescriptor.fragment = &fragmentState;
+        WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
+        fragmentState.module = shaderModule;
+        fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &colorTargetState;
 
-    WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
-    wgpuPipelineLayoutRelease(pipelineLayout);
+        WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+        renderPipelineDescriptor.layout = pipelineLayout;
+        renderPipelineDescriptor.vertex.module = shaderModule;
+        renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+        renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        renderPipelineDescriptor.fragment = &fragmentState;
 
-    return renderPipeline;
-}
+        WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+        wgpuPipelineLayoutRelease(pipelineLayout);
+
+        return renderPipeline;
+    }
+
+} // namespace
 
 int main() try {
     WgpuApp app("Practice02", 1280, 720, false);
@@ -68,18 +72,18 @@ int main() try {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
-            case SDL_EVENT_QUIT:
-                running = false;
-                break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-                app.resize(event.window.data1, event.window.data2);
-                break;
-            case SDL_EVENT_KEY_DOWN:
-                keydown.insert(event.key.key);
-                break;
-            case SDL_EVENT_KEY_UP:
-                keydown.erase(event.key.key);
-                break;
+                case SDL_EVENT_QUIT:
+                    running = false;
+                    break;
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                    app.resize(event.window.data1, event.window.data2);
+                    break;
+                case SDL_EVENT_KEY_DOWN:
+                    keydown.insert(event.key.key);
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    keydown.erase(event.key.key);
+                    break;
             }
         }
 
@@ -127,7 +131,7 @@ int main() try {
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
-} catch (const std::exception &e) {
+} catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
 }
