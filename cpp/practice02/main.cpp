@@ -28,7 +28,7 @@ namespace {
     WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                       WGPUTextureFormat surfaceFormat) {
         WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-        pipelineLayoutDescriptor.immediateSize = 4;
+        pipelineLayoutDescriptor.immediateSize = 8; // 2 4 byte variables
 
         WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -117,7 +117,9 @@ int main() try {
 
         // setting immediates (for now only 'scale')
         float const scale = 0.5f;
+        float const angle = time;
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &scale, sizeof(scale));
+        wgpuRenderPassEncoderSetImmediates(renderPass, 4, &angle, sizeof(angle));
 
         wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
         wgpuRenderPassEncoderEnd(renderPass);
