@@ -121,11 +121,13 @@ int main() try {
         const float angle = time;
         const float cosScaled = std::cos(angle) * scale;
         const float sinScaled = std::sin(angle) * scale;
+        const float xOffset = time / 10;
+        const float yOffset = time / 10;
         const float matrix[16] = {
             cosScaled, sinScaled, 0, 0,
             -sinScaled, cosScaled, 0, 0,
             0, 0, 0, 0,
-            0, 0, 0, 1,
+            xOffset, yOffset, 0, 1,
         };
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &matrix, sizeof(matrix));
         // immediates setting is done
