@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iostream>
 #include <unordered_set>
+#include <cmath>
 
 namespace {
 
@@ -28,7 +29,7 @@ namespace {
     WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                       WGPUTextureFormat surfaceFormat) {
         WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-        pipelineLayoutDescriptor.immediateSize = 8; // 2 4 byte variables
+        pipelineLayoutDescriptor.immediateSize = 64; // matrix 4x4 of floats
 
         WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -116,10 +117,18 @@ int main() try {
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
         // setting immediates (for now only 'scale')
-        float const scale = 0.5f;
-        float const angle = time;
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &scale, sizeof(scale));
-        wgpuRenderPassEncoderSetImmediates(renderPass, 4, &angle, sizeof(angle));
+        const float scale = 0.5f;
+        const float angle = time;
+        const float cosScaled = std::cos(angle) * scale;
+        const float sinScaled = std::sin(angle) * scale;
+        const float matrix[16] = {
+            cosScaled, sinScaled, 0, 0,
+            -sinScaled, cosScaled, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 1,
+        };
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &matrix, sizeof(matrix));
+        // immediates setting is done
 
         wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
         wgpuRenderPassEncoderEnd(renderPass);
