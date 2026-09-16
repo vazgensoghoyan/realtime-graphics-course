@@ -57,9 +57,9 @@ namespace {
     }
 
     void handleMoving(std::unordered_set<SDL_Keycode>& keydown, float& xOffset, float& yOffset) {
-        float offset = 0.005f;
+        float offset = 0.01f;
         if (keydown.contains(SDLK_F)) { // dont know why, SDLK_BACKSPACE didnt work :(
-            offset *= 5;
+            offset *= 2;
         }
 
         if (keydown.contains(SDLK_LEFT)) {
@@ -140,7 +140,7 @@ int main() try {
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
         // setting immediates (for now only 'scale')
-        constexpr float scale = 0.5f;
+        constexpr float scale = 0.3f;
         const float angle = time;
 
         const float cosScaled = std::cos(angle) * scale;
@@ -170,7 +170,7 @@ int main() try {
         wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(matrixTransform), &matrixView, sizeof(matrixView));
         // immediates setting is done
 
-        wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+        wgpuRenderPassEncoderDraw(renderPass, 18, 1, 0, 0);
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
