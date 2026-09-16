@@ -8,49 +8,75 @@
 #include <filesystem>
 #include <iostream>
 #include <unordered_set>
+#include <cmath>
 
-static std::filesystem::path const projectRoot = PROJECT_ROOT;
+namespace {
 
-WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const &path) {
-    auto const source = loadFile(path);
+    static std::filesystem::path const projectRoot = PROJECT_ROOT;
 
-    WGPUShaderSourceWGSL shaderSourceWGSL = WGPU_SHADER_SOURCE_WGSL_INIT;
-    shaderSourceWGSL.code = {source.data(), source.size()};
+    WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const& path) {
+        auto const source = loadFile(path);
 
-    WGPUShaderModuleDescriptor shaderModuleDescriptor = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
-    shaderModuleDescriptor.nextInChain = &shaderSourceWGSL.chain;
+        WGPUShaderSourceWGSL shaderSourceWGSL = WGPU_SHADER_SOURCE_WGSL_INIT;
+        shaderSourceWGSL.code = {source.data(), source.size()};
 
-    return wgpuDeviceCreateShaderModule(device, &shaderModuleDescriptor);
-}
+        WGPUShaderModuleDescriptor shaderModuleDescriptor = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
+        shaderModuleDescriptor.nextInChain = &shaderSourceWGSL.chain;
 
-WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
-                                  WGPUTextureFormat surfaceFormat) {
-    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        return wgpuDeviceCreateShaderModule(device, &shaderModuleDescriptor);
+    }
 
-    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+    WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
+                                      WGPUTextureFormat surfaceFormat) {
+        WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        pipelineLayoutDescriptor.immediateSize = 128; // 2 matrices 4x4 of floats
 
-    WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
-    colorTargetState.format = surfaceFormat;
-    colorTargetState.writeMask = WGPUColorWriteMask_All;
+        WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
-    WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
-    fragmentState.module = shaderModule;
-    fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
-    fragmentState.targetCount = 1;
-    fragmentState.targets = &colorTargetState;
+        WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
+        colorTargetState.format = surfaceFormat;
+        colorTargetState.writeMask = WGPUColorWriteMask_All;
 
-    WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    renderPipelineDescriptor.layout = pipelineLayout;
-    renderPipelineDescriptor.vertex.module = shaderModule;
-    renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
-    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    renderPipelineDescriptor.fragment = &fragmentState;
+        WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
+        fragmentState.module = shaderModule;
+        fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &colorTargetState;
 
-    WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
-    wgpuPipelineLayoutRelease(pipelineLayout);
+        WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+        renderPipelineDescriptor.layout = pipelineLayout;
+        renderPipelineDescriptor.vertex.module = shaderModule;
+        renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+        renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        renderPipelineDescriptor.fragment = &fragmentState;
 
-    return renderPipeline;
-}
+        WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+        wgpuPipelineLayoutRelease(pipelineLayout);
+
+        return renderPipeline;
+    }
+
+    void handleMoving(std::unordered_set<SDL_Keycode>& keydown, float& xOffset, float& yOffset) {
+        float offset = 0.01f;
+        if (keydown.contains(SDLK_F)) { // dont know why, SDLK_BACKSPACE didnt work :(
+            offset *= 2;
+        }
+
+        if (keydown.contains(SDLK_LEFT)) {
+            xOffset -= offset;
+        }
+        if (keydown.contains(SDLK_RIGHT)) {
+            xOffset += offset;
+        }
+        if (keydown.contains(SDLK_DOWN)) {
+            yOffset -= offset;
+        }
+        if (keydown.contains(SDLK_UP)) {
+            yOffset += offset;
+        }
+    }
+
+} // namespace
 
 int main() try {
     WgpuApp app("Practice02", 1280, 720, false);
@@ -63,23 +89,26 @@ int main() try {
 
     std::unordered_set<SDL_Keycode> keydown;
 
+    float xOffset = 0;
+    float yOffset = 0;
+
     bool running = true;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
-            case SDL_EVENT_QUIT:
-                running = false;
-                break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-                app.resize(event.window.data1, event.window.data2);
-                break;
-            case SDL_EVENT_KEY_DOWN:
-                keydown.insert(event.key.key);
-                break;
-            case SDL_EVENT_KEY_UP:
-                keydown.erase(event.key.key);
-                break;
+                case SDL_EVENT_QUIT:
+                    running = false;
+                    break;
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                    app.resize(event.window.data1, event.window.data2);
+                    break;
+                case SDL_EVENT_KEY_DOWN:
+                    keydown.insert(event.key.key);
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    keydown.erase(event.key.key);
+                    break;
             }
         }
 
@@ -109,7 +138,39 @@ int main() try {
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
-        wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+
+        // setting immediates (for now only 'scale')
+        constexpr float scale = 0.3f;
+        const float angle = time;
+
+        const float cosScaled = std::cos(angle) * scale;
+        const float sinScaled = std::sin(angle) * scale;
+
+        handleMoving(keydown, xOffset, yOffset);
+
+        const float matrixTransform[16] = {
+            cosScaled, -sinScaled, 0, xOffset,
+            sinScaled, cosScaled, 0, yOffset,
+            0, 0, 0, 0,
+            0, 0, 0, 1,
+        };
+
+        const int width = app.width();
+        const int height = app.height();
+        const float aspectRatio = static_cast<float>(height) / width;
+
+        const float matrixView[16] = {
+            aspectRatio, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+        };
+
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &matrixTransform, sizeof(matrixTransform));
+        wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(matrixTransform), &matrixView, sizeof(matrixView));
+        // immediates setting is done
+
+        wgpuRenderPassEncoderDraw(renderPass, 18, 1, 0, 0);
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
@@ -127,7 +188,7 @@ int main() try {
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
-} catch (const std::exception &e) {
+} catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
 }
