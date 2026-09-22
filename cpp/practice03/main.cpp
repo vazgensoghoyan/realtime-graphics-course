@@ -88,6 +88,21 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+namespace {
+
+    WGPUBuffer createBufferForVertices(WGPUDevice device, size_t verticesCount) {
+        WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+        bufferDescriptor.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex;
+        bufferDescriptor.size = verticesCount * sizeof(vertex);
+        return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+    }
+
+    void writeVerticesToBuffer(WGPUQueue queue, WGPUBuffer buffer, const std::vector<vertex>& vertices) {
+        wgpuQueueWriteBuffer(queue, buffer, 0, vertices.data(), vertices.size() * sizeof(vertex));
+    }
+
+} // namespace
+
 int main() try {
     WgpuApp app("Practice03", 1280, 720, false);
 
@@ -102,6 +117,9 @@ int main() try {
         {{0.5f, 0.0f}, {251, 209, 162, 255}},
         {{0.0f, 0.5f}, {247, 146,  86, 255}},
     };
+
+    WGPUBuffer buffer = createBufferForVertices(app.device(), vertices.size());
+    writeVerticesToBuffer(app.queue(), buffer, vertices);
 
     math::vector2f mouse{0.f, 0.f};
 
@@ -188,6 +206,7 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuBufferRelease(buffer);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
 } catch (const std::exception &e) {
