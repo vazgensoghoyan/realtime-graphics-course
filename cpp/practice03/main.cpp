@@ -124,9 +124,9 @@ int main() try {
     float time = 0.f;
 
     std::vector<vertex> vertices = {
-        {{0.0f, 0.0f}, {125, 207, 182, 255}},
-        {{0.5f, 0.0f}, {251, 209, 162, 255}},
-        {{0.0f, 0.5f}, {247, 146,  86, 255}},
+        {{200, 200}, {125, 207, 182, 255}},
+        {{200, 700}, {251, 209, 162, 255}},
+        {{700, 200}, {247, 146,  86, 255}},
     };
 
     WGPUBuffer buffer = createBufferForVertices(app.device(), vertices.size());
@@ -178,10 +178,10 @@ int main() try {
         lastFrameStart = now;
 
         float const viewMatrix[16] = {
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
-            0.f, 0.f, 0.f, 1.f,
+            2.f / app.width(), 0.f, 0.f, 0.f,
+            0.f, -2.f / app.height(), 0.f, 0.f,
+            0.f, 0.f, 0.f, 0.f,
+            -1.f, 1.f, 0.f, 1.f,
         };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
