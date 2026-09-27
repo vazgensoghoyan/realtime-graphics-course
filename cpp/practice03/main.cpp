@@ -90,7 +90,7 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
     renderPipelineDescriptor.vertex.bufferCount = 1;
     renderPipelineDescriptor.vertex.buffers = &vertexBufferLayout;
-    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_LineStrip;
     renderPipelineDescriptor.fragment = &fragmentState;
 
     WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
@@ -123,11 +123,7 @@ int main() try {
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
 
-    std::vector<vertex> vertices = {
-        {{200, 200}, {125, 207, 182, 255}},
-        {{200, 700}, {251, 209, 162, 255}},
-        {{700, 200}, {247, 146,  86, 255}},
-    };
+    std::vector<vertex> vertices;
 
     WGPUBuffer buffer = createBufferForVertices(app.device(), vertices.size());
     writeVerticesToBuffer(app.queue(), buffer, vertices);
@@ -158,11 +154,16 @@ int main() try {
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    // Нажата левая кнопка
+                    vertices.push_back(vertex{mouse, {255, 255, 255, 255}});
                 }
                 if (event.button.button == SDL_BUTTON_RIGHT) {
-                    // Нажата правая кнопка
+                    if (vertices.size() > 0) {
+                        vertices.pop_back();
+                    }
                 }
+                wgpuBufferRelease(buffer);
+                buffer = createBufferForVertices(app.device(), vertices.size());
+                writeVerticesToBuffer(app.queue(), buffer, vertices);
                 break;
             }
         }
@@ -199,11 +200,14 @@ int main() try {
         renderPassDescriptor.colorAttachments = &colorAttachment;
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
-        wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, buffer, 0, vertices.size() * sizeof(vertex));
-
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, viewMatrix, sizeof(viewMatrix));
-        wgpuRenderPassEncoderDraw(renderPass, vertices.size(), 1, 0, 0);
+
+        if (vertices.size() >= 2) {
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, buffer, 0, vertices.size() * sizeof(vertex));
+            wgpuRenderPassEncoderDraw(renderPass, vertices.size(), 1, 0, 0);
+        }
+
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
