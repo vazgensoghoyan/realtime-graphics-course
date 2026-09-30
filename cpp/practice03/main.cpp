@@ -18,6 +18,13 @@ struct vertex
 {
     math::vector2f position;
     math::vector4ub color;
+    float distance = 0.f;
+};
+
+struct Immediates {
+    float view[16];
+    float time;
+    std::uint32_t dashed;
 };
 
 vertex lerp(vertex const & v0, vertex const & v1, float t) {
@@ -62,7 +69,7 @@ WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path con
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                   WGPUTextureFormat surfaceFormat) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pipelineLayoutDescriptor.immediateSize = 64;
+    pipelineLayoutDescriptor.immediateSize = sizeof(Immediates);
 
     WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -76,13 +83,14 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
-    WGPUVertexAttribute vertexAttributes[2] = {
+    WGPUVertexAttribute vertexAttributes[3] = {
         { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 },
         { .format = WGPUVertexFormat_Unorm8x4, .offset = offsetof(vertex, color), .shaderLocation = 1 },
+        { .format = WGPUVertexFormat_Float32, .offset = offsetof(vertex, distance), .shaderLocation = 2 },
     };
     WGPUVertexBufferLayout vertexBufferLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
     vertexBufferLayout.arrayStride = sizeof(vertex);
-    vertexBufferLayout.attributeCount = 2;
+    vertexBufferLayout.attributeCount = 3;
     vertexBufferLayout.attributes = vertexAttributes;
 
     WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
@@ -115,6 +123,9 @@ namespace {
             const float t = static_cast<float>(i) / segments;   // равномерно от 0 до 1
             auto point = bezier(vertices, t);
             point.color = {255, 160, 40, 255};                  // оранжеватый
+            if (!curve.empty()) {
+                point.distance = curve.back().distance + math::length(point.position - curve.back().position);
+            }
             curve.push_back(point);
         }
         return curve;
@@ -222,11 +233,15 @@ int main() try {
         time += dt;
         lastFrameStart = now;
 
-        float const viewMatrix[16] = {
-            2.f / app.width(), 0.f, 0.f, 0.f,
-            0.f, -2.f / app.height(), 0.f, 0.f,
-            0.f, 0.f, 0.f, 0.f,
-            -1.f, 1.f, 0.f, 1.f,
+        Immediates immediates = {
+            .view = {
+                2.f / app.width(), 0.f, 0.f, 0.f,
+                0.f, -2.f / app.height(), 0.f, 0.f,
+                0.f, 0.f, 0.f, 0.f,
+                -1.f, 1.f, 0.f, 1.f,
+            },
+            .time = time,
+            .dashed = 0,
         };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
@@ -245,7 +260,7 @@ int main() try {
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, viewMatrix, sizeof(viewMatrix));
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
 
         if (vertices.size() >= 2) {
             wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, buffer, 0, vertices.size() * sizeof(vertex));
@@ -253,6 +268,8 @@ int main() try {
         }
 
         if (curveVertices.size() >= 2) {
+            immediates.dashed = 1;
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
             wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, curveBuffer, 0, curveVertices.size() * sizeof(vertex));
             wgpuRenderPassEncoderDraw(renderPass, curveVertices.size(), 1, 0, 0);
         }
