@@ -157,7 +157,10 @@ int main() try {
 
     bool running = true;
     while (running) {
+
         bool verticesChanged = false;
+        const int previousQuality = quality;
+    
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -168,11 +171,10 @@ int main() try {
                 app.resize(event.window.data1, event.window.data2);
                 break;
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_LEFT) {
-                    // Нажата клавиша влево
-                }
-                if (event.key.key == SDLK_RIGHT) {
-                    // Нажата клавиша вправо
+                if (event.key.key == SDLK_LEFT && quality > 1) {
+                    --quality;
+                } else if (event.key.key == SDLK_RIGHT) {
+                    ++quality;
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION:
@@ -198,7 +200,7 @@ int main() try {
             }
         }
 
-        if (verticesChanged) {
+        if (verticesChanged || quality != previousQuality) {
             curveVertices = generateBezierVertices(vertices, quality);
             if (curveVertices.size() > curveBufferCapacity) {
                 while (curveVertices.size() > curveBufferCapacity) {
