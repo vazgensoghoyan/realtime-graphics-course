@@ -102,6 +102,24 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
 
 namespace {
 
+    std::vector<vertex> generateBezierVertices(std::span<const vertex> vertices, int quality) {
+        std::vector<vertex> curve;
+        if (vertices.size() < 2 || quality < 1) {
+            return curve;
+        }
+
+        const size_t segments = (vertices.size() - 1) * quality;
+        curve.reserve(segments + 1);
+
+        for (size_t i = 0; i < segments + 1; ++i) {
+            const float t = static_cast<float>(i) / segments;   // равномерно от 0 до 1
+            auto point = bezier(vertices, t);
+            point.color = {255, 160, 40, 255};                  // оранжеватый
+            curve.push_back(point);
+        }
+        return curve;
+    }
+
     WGPUBuffer createBufferForVertices(WGPUDevice device, size_t verticesCount) {
         WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
         bufferDescriptor.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex;
@@ -124,14 +142,22 @@ int main() try {
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
 
+    // main vertices
     std::vector<vertex> vertices;
     size_t bufferCapacity = 2;
     WGPUBuffer buffer = createBufferForVertices(app.device(), bufferCapacity);
+
+    // bezier vertices
+    int quality = 4;
+    std::vector<vertex> curveVertices;
+    size_t curveBufferCapacity = 2;
+    WGPUBuffer curveBuffer = createBufferForVertices(app.device(), curveBufferCapacity);
 
     math::vector2f mouse{0.f, 0.f};
 
     bool running = true;
     while (running) {
+        bool verticesChanged = false;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -161,13 +187,27 @@ int main() try {
                         buffer = createBufferForVertices(app.device(), bufferCapacity);
                     }
                     writeVerticesToBuffer(app.queue(), buffer, vertices);
+                    verticesChanged = true;
                 } else if (event.button.button == SDL_BUTTON_RIGHT) {
                     if (!vertices.empty()) {
                         vertices.pop_back();
+                        verticesChanged = true;
                     }
                 }
                 break;
             }
+        }
+
+        if (verticesChanged) {
+            curveVertices = generateBezierVertices(vertices, quality);
+            if (curveVertices.size() > curveBufferCapacity) {
+                while (curveVertices.size() > curveBufferCapacity) {
+                    curveBufferCapacity *= 2;
+                }
+                wgpuBufferRelease(curveBuffer);
+                curveBuffer = createBufferForVertices(app.device(), curveBufferCapacity);
+            }
+            writeVerticesToBuffer(app.queue(), curveBuffer, curveVertices);
         }
 
         std::optional<WGPUSurfaceTexture> surfaceTexture = app.beginFrame();
@@ -210,6 +250,11 @@ int main() try {
             wgpuRenderPassEncoderDraw(renderPass, vertices.size(), 1, 0, 0);
         }
 
+        if (curveVertices.size() >= 2) {
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, curveBuffer, 0, curveVertices.size() * sizeof(vertex));
+            wgpuRenderPassEncoderDraw(renderPass, curveVertices.size(), 1, 0, 0);
+        }
+
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
@@ -225,6 +270,7 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuBufferRelease(curveBuffer);
     wgpuBufferRelease(buffer);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
