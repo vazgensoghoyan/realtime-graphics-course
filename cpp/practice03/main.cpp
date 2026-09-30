@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <iostream>
 #include <span>
+#include <vector>
 
 static std::filesystem::path const projectRoot = PROJECT_ROOT;
 
@@ -124,9 +125,8 @@ int main() try {
     float time = 0.f;
 
     std::vector<vertex> vertices;
-
-    WGPUBuffer buffer = createBufferForVertices(app.device(), vertices.size());
-    writeVerticesToBuffer(app.queue(), buffer, vertices);
+    size_t bufferCapacity = 2;
+    WGPUBuffer buffer = createBufferForVertices(app.device(), bufferCapacity);
 
     math::vector2f mouse{0.f, 0.f};
 
@@ -155,15 +155,17 @@ int main() try {
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     vertices.push_back(vertex{mouse, {255, 255, 255, 255}});
-                }
-                if (event.button.button == SDL_BUTTON_RIGHT) {
-                    if (vertices.size() > 0) {
+                    if (vertices.size() > bufferCapacity) {
+                        bufferCapacity *= 2;
+                        wgpuBufferRelease(buffer);
+                        buffer = createBufferForVertices(app.device(), bufferCapacity);
+                    }
+                    writeVerticesToBuffer(app.queue(), buffer, vertices);
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    if (!vertices.empty()) {
                         vertices.pop_back();
                     }
                 }
-                wgpuBufferRelease(buffer);
-                buffer = createBufferForVertices(app.device(), vertices.size());
-                writeVerticesToBuffer(app.queue(), buffer, vertices);
                 break;
             }
         }
