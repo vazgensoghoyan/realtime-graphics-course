@@ -171,11 +171,17 @@ int main() try {
             0.f, 0.f, 0.f, 1.f,
         };
 
+        const float near = 0.1f;
+        const float far = 100.f;
+        const float right = near;
+        const float aspect = static_cast<float>(app.width()) / static_cast<float>(app.height());
+        const float top = right / aspect;
+
         math::matrix4f const projection{
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
-            0.f, 0.f, 0.f, 1.f,
+            near / right, 0.f, 0.f, 0.f,
+            0.f, near / top, 0.f, 0.f,
+            0.f, 0.f, far / (near - far), near * far / (near - far),
+            0.f, 0.f, -1.f, 0.f,
         };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
