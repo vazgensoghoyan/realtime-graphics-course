@@ -41,10 +41,31 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
+    WGPUVertexAttribute attributes[2] = {
+        WGPU_VERTEX_ATTRIBUTE_INIT,
+        WGPU_VERTEX_ATTRIBUTE_INIT,
+    };
+
+    attributes[0].format = WGPUVertexFormat_Float32x3;
+    attributes[0].offset = offsetof(ObjVertex, position);
+    attributes[0].shaderLocation = 0;
+
+    attributes[1].format = WGPUVertexFormat_Float32x3;
+    attributes[1].offset = offsetof(ObjVertex, normal);
+    attributes[1].shaderLocation = 1;
+
+    WGPUVertexBufferLayout vertexLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
+    vertexLayout.arrayStride = sizeof(ObjVertex);
+    vertexLayout.stepMode = WGPUVertexStepMode_Vertex;
+    vertexLayout.attributeCount = 2;
+    vertexLayout.attributes = attributes;
+
     WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     renderPipelineDescriptor.layout = pipelineLayout;
     renderPipelineDescriptor.vertex.module = shaderModule;
     renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+    renderPipelineDescriptor.vertex.bufferCount = 1;
+    renderPipelineDescriptor.vertex.buffers = &vertexLayout;
     renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
     renderPipelineDescriptor.fragment = &fragmentState;
 
@@ -54,6 +75,37 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+struct WgpuBufferWrapper {
+    WGPUBuffer buffer;
+    std::size_t bytes;
+};
+
+WgpuBufferWrapper initMeshVertexBuffer(const WgpuApp& app, const ObjMesh& mesh) {
+    auto const bytes = mesh.vertices.size() * sizeof(ObjVertex);
+
+    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    desc.size = bytes;
+    desc.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst;
+
+    WGPUBuffer buffer = wgpuDeviceCreateBuffer(app.device(), &desc);
+    wgpuQueueWriteBuffer(app.queue(), buffer, 0, mesh.vertices.data(), bytes);
+
+    return {buffer, bytes};
+}
+
+WgpuBufferWrapper initMeshIndexBuffer(const WgpuApp& app, const ObjMesh& mesh) {
+    auto const bytes = mesh.indices.size() * sizeof(std::uint32_t);
+
+    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    desc.size = bytes;
+    desc.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst;
+
+    WGPUBuffer buffer = wgpuDeviceCreateBuffer(app.device(), &desc);
+    wgpuQueueWriteBuffer(app.queue(), buffer, 0, mesh.indices.data(), bytes);
+
+    return {buffer, bytes};
+}
+
 int main() try {
     WgpuApp app("Practice03", 1280, 720, true);
 
@@ -61,6 +113,9 @@ int main() try {
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
 
     ObjMesh bunny = loadObj(projectRoot / "bunny.obj");
+
+    WgpuBufferWrapper bunnyVertexBuffer = initMeshVertexBuffer(app, bunny);
+    WgpuBufferWrapper bunnyIndexBuffer = initMeshIndexBuffer(app, bunny);
 
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
@@ -140,7 +195,19 @@ int main() try {
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
         wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(modelTranspose), &viewProjectionTranspose, sizeof(viewProjectionTranspose));
 
-        // wgpuRenderPassEncoderDrawIndexed(...)
+        wgpuRenderPassEncoderSetVertexBuffer(
+            renderPass, 0, bunnyVertexBuffer.buffer, 0, bunnyVertexBuffer.bytes
+        );
+
+        wgpuRenderPassEncoderSetIndexBuffer(
+            renderPass, bunnyIndexBuffer.buffer, WGPUIndexFormat_Uint32, 0, bunnyIndexBuffer.bytes
+        );
+
+        wgpuRenderPassEncoderDrawIndexed(
+            renderPass,
+            static_cast<std::uint32_t>(bunny.indices.size()),
+            1, 0, 0, 0
+        );
 
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
@@ -157,6 +224,8 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuBufferRelease(bunnyIndexBuffer.buffer);
+    wgpuBufferRelease(bunnyVertexBuffer.buffer);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
 } catch (const std::exception &e) {
