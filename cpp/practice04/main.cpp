@@ -143,6 +143,8 @@ int main() try {
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
 
     ObjMesh bunny = loadObj(projectRoot / "bunny.obj");
+    float bunny_x = 0.f;
+    float bunny_y = 0.f;
 
     WgpuBufferWrapper bunnyVertexBuffer = initMeshVertexBuffer(app, bunny);
     WgpuBufferWrapper bunnyIndexBuffer = initMeshIndexBuffer(app, bunny);
@@ -192,14 +194,22 @@ int main() try {
         time += dt;
         lastFrameStart = now;
 
+        float speed = 1.5f;
+        if (keydown.contains(SDLK_SPACE)) speed = 3.0f;
+
+        if (keydown.contains(SDLK_LEFT)) bunny_x -= speed * dt;
+        if (keydown.contains(SDLK_RIGHT)) bunny_x += speed * dt;
+        if (keydown.contains(SDLK_DOWN)) bunny_y -= speed * dt;
+        if (keydown.contains(SDLK_UP)) bunny_y += speed * dt;
+
         const float scale = 0.5f;
         const float angle = time;
         const float cosA = std::cos(angle);
         const float sinA = std::sin(angle);
 
         math::matrix4f const model{
-            cosA * scale, 0.f, -sinA * scale, 0.f,
-            0.f, scale, 0.f, 0.f,
+            cosA * scale, 0.f, -sinA * scale, bunny_x,
+            0.f, scale, 0.f, bunny_y,
             sinA * scale, 0.f, cosA * scale, 0.f,
             0.f, 0.f, 0.f, 1.f,
         };
