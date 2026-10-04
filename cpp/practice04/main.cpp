@@ -60,6 +60,11 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     vertexLayout.attributeCount = 2;
     vertexLayout.attributes = attributes;
 
+    WGPUDepthStencilState depthStencilState = WGPU_DEPTH_STENCIL_STATE_INIT;
+    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
+    depthStencilState.depthWriteEnabled = WGPUOptionalBool_True;
+    depthStencilState.depthCompare = WGPUCompareFunction_Less;
+
     WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     renderPipelineDescriptor.layout = pipelineLayout;
     renderPipelineDescriptor.vertex.module = shaderModule;
@@ -68,6 +73,7 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     renderPipelineDescriptor.vertex.buffers = &vertexLayout;
     renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
     renderPipelineDescriptor.fragment = &fragmentState;
+    renderPipelineDescriptor.depthStencil = &depthStencilState;
 
     WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
     wgpuPipelineLayoutRelease(pipelineLayout);
@@ -106,6 +112,30 @@ WgpuBufferWrapper initMeshIndexBuffer(const WgpuApp& app, const ObjMesh& mesh) {
     return {buffer, bytes};
 }
 
+WGPUTexture createDepthTexture(const WgpuApp& app) {
+    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.dimension = WGPUTextureDimension_2D;
+    desc.size.width = app.width();
+    desc.size.height = app.height();
+    desc.size.depthOrArrayLayers = 1;
+    desc.format = WGPUTextureFormat_Depth24Plus;
+    desc.usage = WGPUTextureUsage_RenderAttachment;
+
+    return wgpuDeviceCreateTexture(app.device(), &desc);
+}
+
+WGPUTextureView createDepthView(WGPUTexture depthBuffer) {
+    WGPUTextureViewDescriptor desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    desc.usage = WGPUTextureUsage_RenderAttachment;
+    desc.dimension = WGPUTextureViewDimension_2D;
+    desc.format = WGPUTextureFormat_Depth24Plus;
+    desc.aspect = WGPUTextureAspect_DepthOnly;
+    desc.mipLevelCount = 1;
+    desc.arrayLayerCount = 1;
+
+    return wgpuTextureCreateView(depthBuffer, &desc);
+}
+
 int main() try {
     WgpuApp app("Practice03", 1280, 720, true);
 
@@ -116,6 +146,9 @@ int main() try {
 
     WgpuBufferWrapper bunnyVertexBuffer = initMeshVertexBuffer(app, bunny);
     WgpuBufferWrapper bunnyIndexBuffer = initMeshIndexBuffer(app, bunny);
+
+    WGPUTexture depthBuffer = createDepthTexture(app);
+    WGPUTextureView depthBufferView = createDepthView(depthBuffer);
 
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
@@ -147,6 +180,13 @@ int main() try {
             continue;
         }
 
+        if (wgpuTextureGetWidth(depthBuffer) != app.width() || wgpuTextureGetHeight(depthBuffer) != app.height()) {
+            wgpuTextureViewRelease(depthBufferView);
+            wgpuTextureRelease(depthBuffer);
+            depthBuffer = createDepthTexture(app);
+            depthBufferView = createDepthView(depthBuffer);
+        }
+
         auto const now = std::chrono::high_resolution_clock::now();
         float const dt = std::chrono::duration<float>(now - lastFrameStart).count();
         time += dt;
@@ -164,10 +204,11 @@ int main() try {
             0.f, 0.f, 0.f, 1.f,
         };
 
+        const float cameraDistance = 3.f;
         math::matrix4f const view{
             1.f, 0.f, 0.f, 0.f,
             0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
+            0.f, 0.f, 1.f, -cameraDistance,
             0.f, 0.f, 0.f, 1.f,
         };
 
@@ -194,9 +235,17 @@ int main() try {
         colorAttachment.storeOp = WGPUStoreOp_Store;
         colorAttachment.clearValue = {0.01, 0.02, 0.03, 1.0};
 
+        WGPURenderPassDepthStencilAttachment depthAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+        depthAttachment.view = depthBufferView;
+        depthAttachment.depthLoadOp = WGPULoadOp_Clear;
+        depthAttachment.depthStoreOp = WGPUStoreOp_Discard;
+        depthAttachment.depthClearValue = 1.f;
+        depthAttachment.depthReadOnly = false;
+
         WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
         renderPassDescriptor.colorAttachmentCount = 1;
         renderPassDescriptor.colorAttachments = &colorAttachment;
+        renderPassDescriptor.depthStencilAttachment = &depthAttachment;
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
@@ -235,6 +284,8 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuTextureViewRelease(depthBufferView);
+    wgpuTextureRelease(depthBuffer);
     wgpuBufferRelease(bunnyIndexBuffer.buffer);
     wgpuBufferRelease(bunnyVertexBuffer.buffer);
     wgpuRenderPipelineRelease(renderPipeline);
