@@ -74,7 +74,7 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
     /*can be removed for normal view of bunny*/
     /*from here*/
-    renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_Front;
+    // renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_Front; // wanted to remove
     /*to here*/
     renderPipelineDescriptor.fragment = &fragmentState;
     renderPipelineDescriptor.depthStencil = &depthStencilState;
@@ -147,8 +147,9 @@ int main() try {
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
 
     ObjMesh bunny = loadObj(projectRoot / "bunny.obj");
-    float bunny_x = 0.f;
-    float bunny_y = 0.f;
+    float bunny_x[3] = { -1.5f, 0.f, 1.5f };
+    float bunny_y[3] = { 0.f, 0.f, 0.f };
+    int selectedBunny = 0; // by pressing '1', '2', '3' we can select which bunny to move
 
     WgpuBufferWrapper bunnyVertexBuffer = initMeshVertexBuffer(app, bunny);
     WgpuBufferWrapper bunnyIndexBuffer = initMeshIndexBuffer(app, bunny);
@@ -174,6 +175,11 @@ int main() try {
                 break;
             case SDL_EVENT_KEY_DOWN:
                 keydown.insert(event.key.key);
+                if (!event.key.repeat) {
+                    if (event.key.key == SDLK_1) selectedBunny = 0;
+                    if (event.key.key == SDLK_2) selectedBunny = 1;
+                    if (event.key.key == SDLK_3) selectedBunny = 2;
+                }
                 break;
             case SDL_EVENT_KEY_UP:
                 keydown.erase(event.key.key);
@@ -201,21 +207,35 @@ int main() try {
         float speed = 1.5f;
         if (keydown.contains(SDLK_SPACE)) speed = 3.0f;
 
-        if (keydown.contains(SDLK_LEFT)) bunny_x -= speed * dt;
-        if (keydown.contains(SDLK_RIGHT)) bunny_x += speed * dt;
-        if (keydown.contains(SDLK_DOWN)) bunny_y -= speed * dt;
-        if (keydown.contains(SDLK_UP)) bunny_y += speed * dt;
+        if (keydown.contains(SDLK_LEFT)) bunny_x[selectedBunny] -= speed * dt;
+        if (keydown.contains(SDLK_RIGHT)) bunny_x[selectedBunny] += speed * dt;
+        if (keydown.contains(SDLK_DOWN)) bunny_y[selectedBunny] -= speed * dt;
+        if (keydown.contains(SDLK_UP)) bunny_y[selectedBunny] += speed * dt;
 
         const float scale = 0.5f;
         const float angle = time;
-        const float cosA = std::cos(angle);
-        const float sinA = std::sin(angle);
+        const float cosA = std::cos(angle) * scale;
+        const float sinA = std::sin(angle) * scale;
 
-        math::matrix4f const model{
-            cosA * scale, 0.f, -sinA * scale, bunny_x,
-            0.f, scale, 0.f, bunny_y,
-            sinA * scale, 0.f, cosA * scale, 0.f,
-            0.f, 0.f, 0.f, 1.f,
+        const math::matrix4f models[] = {
+            { // XY rotating
+                cosA, -sinA, 0.f, bunny_x[0],
+                sinA, cosA, 0.f, bunny_y[0],
+                0.f, 0.f, scale, 0.f,
+                0.f, 0.f, 0.f, 1.f,
+            },
+            { // XZ rotating
+                cosA, 0.f, -sinA, bunny_x[1],
+                0.f, scale, 0.f, bunny_y[1],
+                sinA, 0.f, cosA, 0.f,
+                0.f, 0.f, 0.f, 1.f,
+            },
+            { // YZ rotating
+                scale, 0.f, 0.f, bunny_x[2],
+                0.f, cosA, -sinA, bunny_y[2],
+                0.f, sinA, cosA, 0.f,
+                0.f, 0.f, 0.f, 1.f,
+            },
         };
 
         const float cameraDistance = 3.f;
@@ -264,10 +284,8 @@ int main() try {
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
-        auto modelTranspose = math::transpose(model);
         auto viewProjectionTranspose = math::transpose(projection * view);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
-        wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(modelTranspose), &viewProjectionTranspose, sizeof(viewProjectionTranspose));
+        wgpuRenderPassEncoderSetImmediates(renderPass, sizeof(math::matrix4f), &viewProjectionTranspose, sizeof(viewProjectionTranspose));
 
         wgpuRenderPassEncoderSetVertexBuffer(
             renderPass, 0, bunnyVertexBuffer.buffer, 0, bunnyVertexBuffer.bytes
@@ -277,11 +295,15 @@ int main() try {
             renderPass, bunnyIndexBuffer.buffer, WGPUIndexFormat_Uint32, 0, bunnyIndexBuffer.bytes
         );
 
-        wgpuRenderPassEncoderDrawIndexed(
-            renderPass,
-            static_cast<std::uint32_t>(bunny.indices.size()),
-            1, 0, 0, 0
-        );
+        for (const auto& model : models) {
+            auto modelTranspose = math::transpose(model);
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
+            wgpuRenderPassEncoderDrawIndexed(
+                renderPass,
+                static_cast<std::uint32_t>(bunny.indices.size()),
+                1, 0, 0, 0
+            );
+        }
 
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
