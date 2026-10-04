@@ -72,6 +72,10 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     renderPipelineDescriptor.vertex.bufferCount = 1;
     renderPipelineDescriptor.vertex.buffers = &vertexLayout;
     renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    /*can be removed for normal view of bunny*/
+    /*from here*/
+    renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_Front;
+    /*to here*/
     renderPipelineDescriptor.fragment = &fragmentState;
     renderPipelineDescriptor.depthStencil = &depthStencilState;
 
