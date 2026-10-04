@@ -152,10 +152,15 @@ int main() try {
         time += dt;
         lastFrameStart = now;
 
+        const float scale = 0.5f;
+        const float angle = time;
+        const float cosA = std::cos(angle);
+        const float sinA = std::sin(angle);
+
         math::matrix4f const model{
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
+            cosA * scale, 0.f, -sinA * scale, 0.f,
+            0.f, scale, 0.f, 0.f,
+            sinA * scale, 0.f, cosA * scale, 0.f,
             0.f, 0.f, 0.f, 1.f,
         };
 
