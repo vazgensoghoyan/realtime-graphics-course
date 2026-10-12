@@ -131,6 +131,35 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) {
+    WGPUExtent3D extent3D = WGPU_EXTENT_3D_INIT;
+    extent3D.width = image.width;
+    extent3D.height = image.height;
+
+    WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+    descriptor.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
+    descriptor.size = extent3D;
+
+    WGPUTexture texture = wgpuDeviceCreateTexture(device, &descriptor);
+
+    WGPUTexelCopyTextureInfo texelCopyInfo = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    texelCopyInfo.texture = texture;
+    texelCopyInfo.aspect = WGPUTextureAspect_All;
+
+    WGPUTexelCopyBufferLayout copyLayout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+    copyLayout.offset = 0;
+    copyLayout.bytesPerRow = image.width * sizeof(Image::Pixel);
+    copyLayout.rowsPerImage = image.height;
+
+    size_t dataSize = copyLayout.bytesPerRow * copyLayout.rowsPerImage;
+
+    wgpuQueueWriteTexture(queue, &texelCopyInfo, image.pixels.get(), dataSize, &copyLayout, &extent3D);
+
+    return texture;
+}
+
 int main() try {
     WgpuApp app("Practice05", 720, 540, false);
 
@@ -144,6 +173,9 @@ int main() try {
 
     ObjMesh cow = loadObj(projectRoot / "cow.obj");
     Image cowImage = loadImage(projectRoot / "cow.png");
+
+    WGPUTexture cowTexture = loadTexture(app.device(), app.queue(), cowImage);
+    WGPUTextureView cowTextureView = wgpuTextureCreateView(cowTexture, nullptr);
 
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), cow.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), cow.indices, WGPUBufferUsage_Index);
@@ -278,6 +310,8 @@ int main() try {
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
 
+    wgpuTextureViewRelease(cowTextureView);
+    wgpuTextureRelease(cowTexture);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
     wgpuBindGroupRelease(bindGroup);
