@@ -19,6 +19,8 @@ struct Transforms {
 @group(0) @binding(1) var texture: texture_2d<f32>;
 @group(0) @binding(2) var textureSampler: sampler;
 
+var<immediate> time: f32;
+
 @vertex
 fn vertexMain(in: VertexIn) -> VertexOut {
     return VertexOut(
@@ -32,7 +34,11 @@ fn vertexMain(in: VertexIn) -> VertexOut {
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let normal = normalize(in.normal);
 
-    let albedo = textureSample(texture, textureSampler, in.texcoord).rgb;
+    let u = in.texcoord.x;
+    let v = in.texcoord.y;
+    let texcoord = vec2f(u + sin(v + time), v);
+
+    let albedo = textureSample(texture, textureSampler, texcoord).rgb;
 
     let light_dir = normalize(vec3f(3.0, 2.0, 1.0));
     let color = (0.5 + 0.5 * dot(normal, light_dir)) * albedo;
