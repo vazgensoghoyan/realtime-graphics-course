@@ -92,17 +92,20 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
-    WGPUVertexAttribute attributes[2] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
+    WGPUVertexAttribute attributes[3] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
     attributes[0].offset = 0;
     attributes[0].shaderLocation = 0;
     attributes[0].format = WGPUVertexFormat_Float32x3;
     attributes[1].offset = 12;
     attributes[1].shaderLocation = 1;
     attributes[1].format = WGPUVertexFormat_Float32x3;
+    attributes[2].shaderLocation = 2;
+    attributes[2].format = WGPUVertexFormat_Float32x2;
+    attributes[2].offset = offsetof(ObjVertex, texcoord); // 24
 
     WGPUVertexBufferLayout vertexBufferLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
     vertexBufferLayout.arrayStride = sizeof(ObjVertex);
-    vertexBufferLayout.attributeCount = 2;
+    vertexBufferLayout.attributeCount = 3;
     vertexBufferLayout.attributes = attributes;
     vertexBufferLayout.stepMode = WGPUVertexStepMode_Vertex;
 
