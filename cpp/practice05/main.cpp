@@ -38,42 +38,6 @@ WGPUBuffer loadBuffer(WGPUDevice device, WGPUQueue queue, std::vector<T> const &
     return buffer;
 }
 
-WGPUBuffer createUniformBuffer(WGPUDevice device, uint64_t bufferSize) {
-    WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
-    bufferDescriptor.size = bufferSize;
-    bufferDescriptor.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-
-    return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
-}
-
-WGPUBindGroupLayout createUniformBindGroupLayout(WGPUDevice device) {
-    WGPUBindGroupLayoutEntry groupLayoutEntry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    groupLayoutEntry.binding = 0;
-    groupLayoutEntry.visibility = WGPUShaderStage_Vertex;
-    groupLayoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
-
-    WGPUBindGroupLayoutDescriptor layoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    layoutDescriptor.entryCount = 1;
-    layoutDescriptor.entries = &groupLayoutEntry;
-
-    return wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
-}
-
-WGPUBindGroup createUniformBindGroup(WGPUDevice device, WGPUBindGroupLayout layout, WGPUBuffer buffer, uint64_t bufferSize) {
-    WGPUBindGroupEntry bindGroupEntry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bindGroupEntry.binding = 0;
-    bindGroupEntry.buffer = buffer;
-    bindGroupEntry.offset = 0;
-    bindGroupEntry.size = bufferSize;
-
-    WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bindGroupDescriptor.entryCount = 1;
-    bindGroupDescriptor.entries = &bindGroupEntry;
-    bindGroupDescriptor.layout = layout;
-
-    return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
-}
-
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                   WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
@@ -131,6 +95,14 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+WGPUBuffer createUniformBuffer(WGPUDevice device, uint64_t bufferSize) {
+    WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+    bufferDescriptor.size = bufferSize;
+    bufferDescriptor.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+
+    return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+}
+
 WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) {
     WGPUExtent3D extent3D = WGPU_EXTENT_3D_INIT;
     extent3D.width = image.width;
@@ -160,23 +132,92 @@ WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) 
     return texture;
 }
 
+WGPUSampler createTextureSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.addressModeU = WGPUAddressMode_Repeat;
+    descriptor.addressModeV = WGPUAddressMode_Repeat;
+    descriptor.magFilter = WGPUFilterMode_Nearest;
+    descriptor.minFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
+}
+
+WGPUBindGroupLayout createBindGroupLayout(WGPUDevice device) {
+    WGPUBindGroupLayoutEntry entries[3];
+
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Vertex;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Fragment;
+    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor layoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    layoutDescriptor.entryCount = 3;
+    layoutDescriptor.entries = entries;
+
+    return wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, WGPUBindGroupLayout layout,
+                              WGPUBuffer buffer, uint64_t bufferSize,
+                              WGPUTextureView textureView, WGPUSampler sampler) {
+    WGPUBindGroupEntry entries[3];
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].buffer = buffer;
+    entries[0].offset = 0;
+    entries[0].size = bufferSize;
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].textureView = textureView;
+
+    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].sampler = sampler;
+
+    WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bindGroupDescriptor.entryCount = 3;
+    bindGroupDescriptor.entries = entries;
+    bindGroupDescriptor.layout = layout;
+
+    return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
+}
+
 int main() try {
     WgpuApp app("Practice05", 720, 540, false);
 
     uint64_t bufferSize = 2 * (4 * 4) * sizeof(float); // 2 matrices 4x4
     WGPUBuffer buffer = createUniformBuffer(app.device(), bufferSize);
-    WGPUBindGroupLayout bindGroupLayout = createUniformBindGroupLayout(app.device());
-    WGPUBindGroup bindGroup = createUniformBindGroup(app.device(), bindGroupLayout, buffer, bufferSize);
+    WGPUBindGroupLayout bindGroupLayout = createBindGroupLayout(app.device());
+
+    Image cowImage = loadImage(projectRoot / "cow.png");
+    WGPUTexture cowTexture = loadTexture(app.device(), app.queue(), cowImage);
+    WGPUTextureView cowTextureView = wgpuTextureCreateView(cowTexture, nullptr);
+    WGPUSampler sampler = createTextureSampler(app.device());
+
+    WGPUBindGroup bindGroup = createBindGroup(app.device(), bindGroupLayout,
+                                              buffer, bufferSize,
+                                              cowTextureView, sampler);
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), bindGroupLayout);
 
+    wgpuBindGroupLayoutRelease(bindGroupLayout);
+
     ObjMesh cow = loadObj(projectRoot / "cow.obj");
-    Image cowImage = loadImage(projectRoot / "cow.png");
-
-    WGPUTexture cowTexture = loadTexture(app.device(), app.queue(), cowImage);
-    WGPUTextureView cowTextureView = wgpuTextureCreateView(cowTexture, nullptr);
-
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), cow.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), cow.indices, WGPUBufferUsage_Index);
 
@@ -310,12 +351,12 @@ int main() try {
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
 
+    wgpuSamplerRelease(sampler);
     wgpuTextureViewRelease(cowTextureView);
     wgpuTextureRelease(cowTexture);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
     wgpuBindGroupRelease(bindGroup);
-    wgpuBindGroupLayoutRelease(bindGroupLayout);
     wgpuBufferRelease(buffer);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
