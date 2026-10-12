@@ -13,7 +13,7 @@ struct Immediates {
     viewProjection: mat4x4f,
 }
 
-var<immediate> immediates: Immediates;
+@group(0) @binding(0) var<uniform> immediates: Immediates;
 
 @vertex
 fn vertexMain(in: VertexIn) -> VertexOut {
