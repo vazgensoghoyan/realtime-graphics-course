@@ -10,30 +10,32 @@ struct VertexOut {
     @location(1) texcoord: vec2f,
 }
 
-struct UniformBuffer {
+struct Transforms {
     model: mat4x4f,
     viewProjection: mat4x4f,
 }
 
-@group(0) @binding(0) var<uniform> uniformBuffer: UniformBuffer;
+@group(0) @binding(0) var<uniform> transforms: Transforms;
+@group(0) @binding(1) var texture: texture_2d<f32>;
+@group(0) @binding(2) var textureSampler: sampler;
 
 @vertex
 fn vertexMain(in: VertexIn) -> VertexOut {
     return VertexOut(
-        uniformBuffer.viewProjection * uniformBuffer.model * vec4f(in.position, 1.0),
-        normalize((uniformBuffer.model * vec4f(in.normal, 0.0)).xyz),
+        transforms.viewProjection * transforms.model * vec4f(in.position, 1.0),
+        normalize((transforms.model * vec4f(in.normal, 0.0)).xyz),
         in.texcoord
     );
 }
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
-    // let normal = normalize(in.normal);
+    let normal = normalize(in.normal);
 
-    // let albedo = vec3f(1.0);
+    let albedo = textureSample(texture, textureSampler, in.texcoord).rgb;
 
-    // let light_dir = normalize(vec3f(3.0, 2.0, 1.0));
-    // let color = (0.5 + 0.5 * dot(normal, light_dir)) * albedo;
+    let light_dir = normalize(vec3f(3.0, 2.0, 1.0));
+    let color = (0.5 + 0.5 * dot(normal, light_dir)) * albedo;
 
-    return vec4f(in.texcoord, 0.0, 1.0);
+    return vec4f(color, 1.0);
 }
