@@ -38,6 +38,43 @@ WGPUBuffer loadBuffer(WGPUDevice device, WGPUQueue queue, std::vector<T> const &
     return buffer;
 }
 
+std::pair<WGPUBuffer, WGPUBindGroup> createUniformResources(WGPUDevice device) {
+    uint64_t bufferSize = 2 * (4 * 4) * sizeof(float); // 2 matrices 4x4
+
+    WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+    bufferDescriptor.size = bufferSize;
+    bufferDescriptor.usage = WGPUBufferUsage_Uniform;
+
+    WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+
+    WGPUBindGroupLayoutEntry groupLayoutEntry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    groupLayoutEntry.binding = 0;
+    groupLayoutEntry.visibility = WGPUShaderStage_Vertex;
+    groupLayoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
+
+    WGPUBindGroupLayoutDescriptor layoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    layoutDescriptor.entryCount = 1;
+    layoutDescriptor.entries = &groupLayoutEntry;
+
+    WGPUBindGroupLayout bindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
+
+    WGPUBindGroupEntry bindGroupEntry = WGPU_BIND_GROUP_ENTRY_INIT;
+    bindGroupEntry.binding = 0;
+    bindGroupEntry.buffer = buffer;
+    bindGroupEntry.offset = 0;
+    bindGroupEntry.size = bufferSize;
+
+    WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bindGroupDescriptor.entryCount = 1;
+    bindGroupDescriptor.entries = &bindGroupEntry;
+    bindGroupDescriptor.layout = bindGroupLayout;
+
+    WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
+    wgpuBindGroupLayoutRelease(bindGroupLayout);
+
+    return {buffer, bindGroup};
+}
+
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                   WGPUTextureFormat surfaceFormat) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
@@ -92,7 +129,7 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
 }
 
 int main() try {
-    WgpuApp app("Practice05", 1280, 720, false);
+    WgpuApp app("Practice05", 720, 540, false);
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
@@ -105,6 +142,8 @@ int main() try {
 
     WGPUTexture depthBuffer = nullptr;
     WGPUTextureView depthBufferView = nullptr;
+
+    auto [uniformBuffer, uniformBindGroup] = createUniformResources(app.device());
 
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
@@ -228,6 +267,9 @@ int main() try {
 
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
+
+    wgpuBindGroupRelease(uniformBindGroup);
+    wgpuBufferRelease(uniformBuffer);
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
