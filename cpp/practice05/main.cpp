@@ -41,6 +41,7 @@ WGPUBuffer loadBuffer(WGPUDevice device, WGPUQueue queue, std::vector<T> const &
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                   WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pipelineLayoutDescriptor.immediateSize = sizeof(float);
     pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
     pipelineLayoutDescriptor.bindGroupLayouts = &bindGroupLayout;
 
@@ -346,6 +347,8 @@ int main() try {
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
+
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &time, sizeof(time));
 
         wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
 
