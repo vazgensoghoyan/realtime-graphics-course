@@ -38,15 +38,15 @@ WGPUBuffer loadBuffer(WGPUDevice device, WGPUQueue queue, std::vector<T> const &
     return buffer;
 }
 
-std::pair<WGPUBuffer, WGPUBindGroup> createUniformResources(WGPUDevice device) {
-    uint64_t bufferSize = 2 * (4 * 4) * sizeof(float); // 2 matrices 4x4
-
+WGPUBuffer createUniformBuffer(WGPUDevice device, uint64_t bufferSize) {
     WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
     bufferDescriptor.size = bufferSize;
-    bufferDescriptor.usage = WGPUBufferUsage_Uniform;
+    bufferDescriptor.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
 
-    WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+    return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+}
 
+WGPUBindGroupLayout createUniformBindGroupLayout(WGPUDevice device) {
     WGPUBindGroupLayoutEntry groupLayoutEntry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     groupLayoutEntry.binding = 0;
     groupLayoutEntry.visibility = WGPUShaderStage_Vertex;
@@ -56,8 +56,10 @@ std::pair<WGPUBuffer, WGPUBindGroup> createUniformResources(WGPUDevice device) {
     layoutDescriptor.entryCount = 1;
     layoutDescriptor.entries = &groupLayoutEntry;
 
-    WGPUBindGroupLayout bindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
+    return wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
+}
 
+WGPUBindGroup createUniformBindGroup(WGPUDevice device, WGPUBindGroupLayout layout, WGPUBuffer buffer, uint64_t bufferSize) {
     WGPUBindGroupEntry bindGroupEntry = WGPU_BIND_GROUP_ENTRY_INIT;
     bindGroupEntry.binding = 0;
     bindGroupEntry.buffer = buffer;
@@ -67,18 +69,16 @@ std::pair<WGPUBuffer, WGPUBindGroup> createUniformResources(WGPUDevice device) {
     WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDescriptor.entryCount = 1;
     bindGroupDescriptor.entries = &bindGroupEntry;
-    bindGroupDescriptor.layout = bindGroupLayout;
+    bindGroupDescriptor.layout = layout;
 
-    WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
-    wgpuBindGroupLayoutRelease(bindGroupLayout);
-
-    return {buffer, bindGroup};
+    return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
 }
 
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
-                                  WGPUTextureFormat surfaceFormat) {
+                                  WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pipelineLayoutDescriptor.immediateSize = 128;
+    pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+    pipelineLayoutDescriptor.bindGroupLayouts = &bindGroupLayout;
 
     WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -131,8 +131,13 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
 int main() try {
     WgpuApp app("Practice05", 720, 540, false);
 
+    uint64_t bufferSize = 2 * (4 * 4) * sizeof(float); // 2 matrices 4x4
+    WGPUBuffer buffer = createUniformBuffer(app.device(), bufferSize);
+    WGPUBindGroupLayout bindGroupLayout = createUniformBindGroupLayout(app.device());
+    WGPUBindGroup bindGroup = createUniformBindGroup(app.device(), bindGroupLayout, buffer, bufferSize);
+
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
-    WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
+    WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), bindGroupLayout);
 
     ObjMesh cow = loadObj(projectRoot / "cow.obj");
     Image cowImage = loadImage(projectRoot / "cow.png");
@@ -142,8 +147,6 @@ int main() try {
 
     WGPUTexture depthBuffer = nullptr;
     WGPUTextureView depthBufferView = nullptr;
-
-    auto [uniformBuffer, uniformBindGroup] = createUniformResources(app.device());
 
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
@@ -213,6 +216,12 @@ int main() try {
         math::matrix4f const view = math::translation(math::vector{0.f, 0.f, - camera_distance});
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
+        auto modelTranspose = math::transpose(model);
+        auto viewProjectionTranspose = math::transpose(projection * view);
+
+        wgpuQueueWriteBuffer(app.queue(), buffer, 0, &modelTranspose, sizeof(modelTranspose));
+        wgpuQueueWriteBuffer(app.queue(), buffer, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
+
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
 
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
@@ -238,13 +247,11 @@ int main() try {
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
-        auto modelTranspose = math::transpose(model);
-        auto viewProjectionTranspose = math::transpose(projection * view);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
-        wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
 
         wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+
         wgpuRenderPassEncoderDrawIndexed(renderPass, cow.indices.size(), 1, 0, 0, 0);
 
         wgpuRenderPassEncoderEnd(renderPass);
@@ -268,11 +275,11 @@ int main() try {
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
 
-    wgpuBindGroupRelease(uniformBindGroup);
-    wgpuBufferRelease(uniformBuffer);
-
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
+    wgpuBindGroupRelease(bindGroup);
+    wgpuBindGroupLayoutRelease(bindGroupLayout);
+    wgpuBufferRelease(buffer);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
