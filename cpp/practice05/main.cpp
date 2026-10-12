@@ -113,12 +113,14 @@ WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) 
     descriptor.format = WGPUTextureFormat_RGBA8Unorm;
     descriptor.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
     descriptor.size = extent3D;
+    descriptor.mipLevelCount = 4;
 
     WGPUTexture texture = wgpuDeviceCreateTexture(device, &descriptor);
 
     WGPUTexelCopyTextureInfo texelCopyInfo = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
     texelCopyInfo.texture = texture;
     texelCopyInfo.aspect = WGPUTextureAspect_All;
+    texelCopyInfo.mipLevel = 0; // our real texture, biggest mip level
 
     WGPUTexelCopyBufferLayout copyLayout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
     copyLayout.offset = 0;
@@ -128,6 +130,28 @@ WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) 
     size_t dataSize = copyLayout.bytesPerRow * copyLayout.rowsPerImage;
 
     wgpuQueueWriteTexture(queue, &texelCopyInfo, image.pixels.get(), dataSize, &copyLayout, &extent3D);
+
+    Image::Pixel const mipColors[] = {
+        {255, 0, 0, 255}, // red
+        {0, 255, 0, 255}, // green
+        {0, 0, 255, 255}, // blue
+    };
+
+    for (uint32_t level = 0; level < 3; ++level) {
+        extent3D.width = std::max(1u, extent3D.width / 2);
+        extent3D.height = std::max(1u, extent3D.height / 2);
+
+        std::vector<Image::Pixel> pixels(extent3D.width * extent3D.height, mipColors[level]);
+
+        // reusing
+        texelCopyInfo.mipLevel = level + 1;
+        copyLayout.bytesPerRow = extent3D.width * sizeof(Image::Pixel);
+        copyLayout.rowsPerImage = extent3D.height;
+
+        dataSize = copyLayout.bytesPerRow * copyLayout.rowsPerImage;
+
+        wgpuQueueWriteTexture(queue, &texelCopyInfo, pixels.data(), dataSize, &copyLayout, &extent3D);
+    }
 
     return texture;
 }
