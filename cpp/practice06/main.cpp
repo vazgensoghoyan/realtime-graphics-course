@@ -142,6 +142,51 @@ WGPURenderPipeline createTexturePipeline(WGPUDevice device, WGPUShaderModule sha
     return renderPipeline;
 }
 
+WGPUSampler createSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.addressModeU = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeV = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeW = WGPUAddressMode_ClampToEdge;
+    descriptor.minFilter = WGPUFilterMode_Linear;
+    descriptor.magFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Linear;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
+}
+
+WGPUTexture createTexture(WGPUDevice device, uint32_t width, uint32_t height) {
+    WGPUExtent3D extent = WGPU_EXTENT_3D_INIT;
+    extent.width = width;
+    extent.height = height;
+
+    WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+    descriptor.size = extent;
+    descriptor.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    descriptor.dimension = WGPUTextureDimension_2D;
+
+    return wgpuDeviceCreateTexture(device, &descriptor);
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, WGPUBindGroupLayout layout, WGPUTextureView textureView, WGPUSampler sampler) {
+    WGPUBindGroupEntry entries[2];
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].textureView = textureView;
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].sampler = sampler;
+
+    WGPUBindGroupDescriptor descriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    descriptor.entryCount = 2;
+    descriptor.entries = entries;
+    descriptor.layout = layout;
+
+    return wgpuDeviceCreateBindGroup(device, &descriptor);
+}
+
 int main() try {
     WgpuApp app("Practice06", 1280, 720, false);
 
@@ -154,6 +199,12 @@ int main() try {
     WGPURenderPipeline textureRenderPipeline = createTexturePipeline(app.device(), textureShaderModule, app.surfaceFormat(), textureBindGroupLayout);
 
     ObjMesh dragon = loadObj(projectRoot / "dragon.obj");
+
+    WGPUSampler dragonSampler = createSampler(app.device());
+    WGPUTexture dragonTexture = nullptr;
+    WGPUTextureView dragonTextureView = nullptr;
+
+    WGPUBindGroup bindGroup = nullptr;
 
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), dragon.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), dragon.indices, WGPUBufferUsage_Index);
@@ -194,7 +245,19 @@ int main() try {
             continue;
         }
 
-        if (!depthBuffer || wgpuTextureGetWidth(depthBuffer) != app.width() || wgpuTextureGetHeight(depthBuffer) != app.height()) {
+        const bool resized = !depthBuffer || wgpuTextureGetWidth(depthBuffer) != app.width() || wgpuTextureGetHeight(depthBuffer) != app.height();
+
+        if (resized) {
+            if (bindGroup) wgpuBindGroupRelease(bindGroup);
+            if (dragonTextureView) wgpuTextureViewRelease(dragonTextureView);
+            if (dragonTexture) wgpuTextureRelease(dragonTexture);
+
+            dragonTexture = createTexture(app.device(), app.width() / 2, app.height() / 2);
+            dragonTextureView = wgpuTextureCreateView(dragonTexture, nullptr);
+            bindGroup = createBindGroup(app.device(), textureBindGroupLayout, dragonTextureView, dragonSampler);
+        }
+
+        if (resized) {
             if (depthBufferView) wgpuTextureViewRelease(depthBufferView);
             if (depthBuffer) wgpuTextureRelease(depthBuffer);
 
@@ -282,6 +345,12 @@ int main() try {
 
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
+
+    if (bindGroup) wgpuBindGroupRelease(bindGroup);
+
+    if (dragonTextureView) wgpuTextureViewRelease(dragonTextureView);
+    if (dragonTexture) wgpuTextureRelease(dragonTexture);
+    wgpuSamplerRelease(dragonSampler);
 
     wgpuRenderPipelineRelease(textureRenderPipeline);
     wgpuShaderModuleRelease(textureShaderModule);
