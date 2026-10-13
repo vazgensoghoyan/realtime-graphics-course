@@ -193,7 +193,7 @@ int main() try {
     WGPUBindGroupLayout textureBindGroupLayout = createTextureBindGroupLayout(app.device());
 
     WGPUShaderModule mainShaderModule = createShaderModule(app.device(), projectRoot / "shader_main.wgsl");
-    WGPURenderPipeline mainRenderPipeline = createMainPipeline(app.device(), mainShaderModule, app.surfaceFormat());
+    WGPURenderPipeline mainRenderPipeline = createMainPipeline(app.device(), mainShaderModule, WGPUTextureFormat_RGBA8Unorm);
 
     WGPUShaderModule textureShaderModule = createShaderModule(app.device(), projectRoot / "shader_texture.wgsl");
     WGPURenderPipeline textureRenderPipeline = createTexturePipeline(app.device(), textureShaderModule, app.surfaceFormat(), textureBindGroupLayout);
@@ -245,14 +245,17 @@ int main() try {
             continue;
         }
 
-        const bool resized = !depthBuffer || wgpuTextureGetWidth(depthBuffer) != app.width() || wgpuTextureGetHeight(depthBuffer) != app.height();
+        const uint32_t newWidth = app.width() / 2;
+        const uint32_t newHeight = app.height() / 2;
+
+        const bool resized = !depthBuffer || wgpuTextureGetWidth(depthBuffer) != newWidth || wgpuTextureGetHeight(depthBuffer) != newHeight;
 
         if (resized) {
             if (bindGroup) wgpuBindGroupRelease(bindGroup);
             if (dragonTextureView) wgpuTextureViewRelease(dragonTextureView);
             if (dragonTexture) wgpuTextureRelease(dragonTexture);
 
-            dragonTexture = createTexture(app.device(), app.width() / 2, app.height() / 2);
+            dragonTexture = createTexture(app.device(), newWidth, newHeight);
             dragonTextureView = wgpuTextureCreateView(dragonTexture, nullptr);
             bindGroup = createBindGroup(app.device(), textureBindGroupLayout, dragonTextureView, dragonSampler);
         }
@@ -264,7 +267,7 @@ int main() try {
             WGPUTextureDescriptor depthBufferDescriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
             depthBufferDescriptor.usage = WGPUTextureUsage_RenderAttachment;
             depthBufferDescriptor.dimension = WGPUTextureDimension_2D;
-            depthBufferDescriptor.size = {(std::uint32_t)app.width(), (std::uint32_t)app.height(), 1};
+            depthBufferDescriptor.size = {newWidth, newHeight, 1};
             depthBufferDescriptor.format = WGPUTextureFormat_Depth24Plus;
             depthBuffer = wgpuDeviceCreateTexture(app.device(), &depthBufferDescriptor);
 
@@ -300,7 +303,7 @@ int main() try {
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
 
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        colorAttachment.view = targetView;
+        colorAttachment.view = dragonTextureView;
         colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
         colorAttachment.clearValue = {0.00, 0.06, 0.10, 1.0};
@@ -335,7 +338,8 @@ int main() try {
             .extent = {0.5f, 0.5f},
         };
 
-        colorAttachment.loadOp = WGPULoadOp_Load;
+        colorAttachment.view = targetView;
+        colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
         renderPassDescriptor.depthStencilAttachment = nullptr;
         renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
