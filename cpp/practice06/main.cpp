@@ -328,6 +328,28 @@ int main() try {
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
+        // second render pass, just reusing same variables
+
+        TextureImmediates const textureImmediates{
+            .center = {-0.5f, -0.5f},
+            .extent = {0.5f, 0.5f},
+        };
+
+        colorAttachment.loadOp = WGPULoadOp_Load;
+        colorAttachment.storeOp = WGPUStoreOp_Store;
+        renderPassDescriptor.depthStencilAttachment = nullptr;
+        renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+        wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &textureImmediates, sizeof(textureImmediates));
+        wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
+
+        wgpuRenderPassEncoderEnd(renderPass);
+        wgpuRenderPassEncoderRelease(renderPass);
+
+        // submitting and releasing
+
         WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, nullptr);
         wgpuCommandEncoderRelease(encoder);
 
