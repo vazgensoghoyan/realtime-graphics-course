@@ -110,12 +110,14 @@ WGPURenderPipeline createMainPipeline(WGPUDevice device, WGPUShaderModule shader
 enum class ShaderMode: int32_t {
     Id = 0,
     ColorGrading = 1,
+    DomainWarping = 2,
 };
 
 struct TextureImmediates {
     math::vector2f center;
     math::vector2f extent;
     ShaderMode mode;
+    float time;
 };
 
 WGPURenderPipeline createTexturePipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout textureBindGroupLayout) {
@@ -387,7 +389,7 @@ int main() try {
         ShaderMode shaderMode[s_textureLayerCount] = {
             ShaderMode::Id,
             ShaderMode::ColorGrading,
-            ShaderMode::Id,
+            ShaderMode::DomainWarping,
             ShaderMode::Id,
         };
 
@@ -407,6 +409,7 @@ int main() try {
                 .center = centers[i],
                 .extent = {0.5f, 0.5f},
                 .mode = shaderMode[i],
+                .time = time,
             };
 
             wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
