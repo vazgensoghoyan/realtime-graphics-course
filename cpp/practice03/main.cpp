@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <iostream>
 #include <span>
+#include <vector>
 
 static std::filesystem::path const projectRoot = PROJECT_ROOT;
 
@@ -17,6 +18,13 @@ struct vertex
 {
     math::vector2f position;
     math::vector4ub color;
+    float distance = 0.f;
+};
+
+struct Immediates {
+    float view[16];
+    float time;
+    std::uint32_t dashed;
 };
 
 vertex lerp(vertex const & v0, vertex const & v1, float t) {
@@ -61,7 +69,7 @@ WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path con
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
                                   WGPUTextureFormat surfaceFormat) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pipelineLayoutDescriptor.immediateSize = 64;
+    pipelineLayoutDescriptor.immediateSize = sizeof(Immediates);
 
     WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -75,11 +83,23 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
+    WGPUVertexAttribute vertexAttributes[3] = {
+        { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 },
+        { .format = WGPUVertexFormat_Unorm8x4, .offset = offsetof(vertex, color), .shaderLocation = 1 },
+        { .format = WGPUVertexFormat_Float32, .offset = offsetof(vertex, distance), .shaderLocation = 2 },
+    };
+    WGPUVertexBufferLayout vertexBufferLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
+    vertexBufferLayout.arrayStride = sizeof(vertex);
+    vertexBufferLayout.attributeCount = 3;
+    vertexBufferLayout.attributes = vertexAttributes;
+
     WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     renderPipelineDescriptor.layout = pipelineLayout;
     renderPipelineDescriptor.vertex.module = shaderModule;
     renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
-    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.vertex.bufferCount = 1;
+    renderPipelineDescriptor.vertex.buffers = &vertexBufferLayout;
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_LineStrip;
     renderPipelineDescriptor.fragment = &fragmentState;
 
     WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
@@ -87,6 +107,42 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
 
     return renderPipeline;
 }
+
+namespace {
+
+    std::vector<vertex> generateBezierVertices(std::span<const vertex> vertices, int quality) {
+        std::vector<vertex> curve;
+        if (vertices.size() < 2 || quality < 1) {
+            return curve;
+        }
+
+        const size_t segments = (vertices.size() - 1) * quality;
+        curve.reserve(segments + 1);
+
+        for (size_t i = 0; i < segments + 1; ++i) {
+            const float t = static_cast<float>(i) / segments;   // равномерно от 0 до 1
+            auto point = bezier(vertices, t);
+            point.color = {255, 160, 40, 255};                  // оранжеватый
+            if (!curve.empty()) {
+                point.distance = curve.back().distance + math::length(point.position - curve.back().position);
+            }
+            curve.push_back(point);
+        }
+        return curve;
+    }
+
+    WGPUBuffer createBufferForVertices(WGPUDevice device, size_t verticesCount) {
+        WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+        bufferDescriptor.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex;
+        bufferDescriptor.size = verticesCount * sizeof(vertex);
+        return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+    }
+
+    void writeVerticesToBuffer(WGPUQueue queue, WGPUBuffer buffer, const std::vector<vertex>& vertices) {
+        wgpuQueueWriteBuffer(queue, buffer, 0, vertices.data(), vertices.size() * sizeof(vertex));
+    }
+
+} // namespace
 
 int main() try {
     WgpuApp app("Practice03", 1280, 720, false);
@@ -97,16 +153,25 @@ int main() try {
     auto lastFrameStart = std::chrono::high_resolution_clock::now();
     float time = 0.f;
 
-    std::vector<vertex> vertices = {
-        {{0.0f, 0.0f}, {125, 207, 182, 255}},
-        {{0.5f, 0.0f}, {251, 209, 162, 255}},
-        {{0.0f, 0.5f}, {247, 146,  86, 255}},
-    };
+    // main vertices
+    std::vector<vertex> vertices;
+    size_t bufferCapacity = 2;
+    WGPUBuffer buffer = createBufferForVertices(app.device(), bufferCapacity);
+
+    // bezier vertices
+    int quality = 4;
+    std::vector<vertex> curveVertices;
+    size_t curveBufferCapacity = 2;
+    WGPUBuffer curveBuffer = createBufferForVertices(app.device(), curveBufferCapacity);
 
     math::vector2f mouse{0.f, 0.f};
 
     bool running = true;
     while (running) {
+
+        bool verticesChanged = false;
+        const int previousQuality = quality;
+    
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -117,11 +182,10 @@ int main() try {
                 app.resize(event.window.data1, event.window.data2);
                 break;
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_LEFT) {
-                    // Нажата клавиша влево
-                }
-                if (event.key.key == SDLK_RIGHT) {
-                    // Нажата клавиша вправо
+                if (event.key.key == SDLK_LEFT && quality > 1) {
+                    --quality;
+                } else if (event.key.key == SDLK_RIGHT) {
+                    ++quality;
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION:
@@ -129,13 +193,34 @@ int main() try {
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    // Нажата левая кнопка
-                }
-                if (event.button.button == SDL_BUTTON_RIGHT) {
-                    // Нажата правая кнопка
+                    vertices.push_back(vertex{mouse, {255, 255, 255, 255}});
+                    if (vertices.size() > bufferCapacity) {
+                        bufferCapacity *= 2;
+                        wgpuBufferRelease(buffer);
+                        buffer = createBufferForVertices(app.device(), bufferCapacity);
+                    }
+                    writeVerticesToBuffer(app.queue(), buffer, vertices);
+                    verticesChanged = true;
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    if (!vertices.empty()) {
+                        vertices.pop_back();
+                        verticesChanged = true;
+                    }
                 }
                 break;
             }
+        }
+
+        if (verticesChanged || quality != previousQuality) {
+            curveVertices = generateBezierVertices(vertices, quality);
+            if (curveVertices.size() > curveBufferCapacity) {
+                while (curveVertices.size() > curveBufferCapacity) {
+                    curveBufferCapacity *= 2;
+                }
+                wgpuBufferRelease(curveBuffer);
+                curveBuffer = createBufferForVertices(app.device(), curveBufferCapacity);
+            }
+            writeVerticesToBuffer(app.queue(), curveBuffer, curveVertices);
         }
 
         std::optional<WGPUSurfaceTexture> surfaceTexture = app.beginFrame();
@@ -148,11 +233,15 @@ int main() try {
         time += dt;
         lastFrameStart = now;
 
-        float const viewMatrix[16] = {
-            1.f, 0.f, 0.f, 0.f,
-            0.f, 1.f, 0.f, 0.f,
-            0.f, 0.f, 1.f, 0.f,
-            0.f, 0.f, 0.f, 1.f,
+        Immediates immediates = {
+            .view = {
+                2.f / app.width(), 0.f, 0.f, 0.f,
+                0.f, -2.f / app.height(), 0.f, 0.f,
+                0.f, 0.f, 0.f, 0.f,
+                -1.f, 1.f, 0.f, 1.f,
+            },
+            .time = time,
+            .dashed = 0,
         };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
@@ -171,8 +260,20 @@ int main() try {
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, viewMatrix, sizeof(viewMatrix));
-        wgpuRenderPassEncoderDraw(renderPass, vertices.size(), 1, 0, 0);
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
+
+        if (vertices.size() >= 2) {
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, buffer, 0, vertices.size() * sizeof(vertex));
+            wgpuRenderPassEncoderDraw(renderPass, vertices.size(), 1, 0, 0);
+        }
+
+        if (curveVertices.size() >= 2) {
+            immediates.dashed = 1;
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, curveBuffer, 0, curveVertices.size() * sizeof(vertex));
+            wgpuRenderPassEncoderDraw(renderPass, curveVertices.size(), 1, 0, 0);
+        }
+
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
@@ -188,6 +289,8 @@ int main() try {
         wgpuTextureRelease(surfaceTexture->texture);
     }
 
+    wgpuBufferRelease(curveBuffer);
+    wgpuBufferRelease(buffer);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
 } catch (const std::exception &e) {
