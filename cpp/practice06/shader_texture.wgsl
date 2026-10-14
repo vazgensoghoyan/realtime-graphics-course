@@ -5,6 +5,7 @@ struct Immediates {
     center: vec2f,
     extent: vec2f,
     mode: i32,
+    time: f32,
 }
 
 var<immediate> immediates: Immediates;
@@ -35,9 +36,19 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOut {
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
-    let color = textureSample(input_texture, linear_sampler, in.texcoord);
+    var texcoord = in.texcoord;
+
+    // domain warping
+    if immediates.mode == 2 {
+        texcoord += vec2(sin(in.texcoord.y * 50.0 + immediates.time) * 0.01, 0.0);
+    }
+
+    let color = textureSample(input_texture, linear_sampler, texcoord);
+
+    // color grading
     if immediates.mode == 1 {
         return floor(color * 4.0) / 3.0;
     }
+
     return color;
 }
