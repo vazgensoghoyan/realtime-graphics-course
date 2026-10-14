@@ -4,6 +4,7 @@
 struct Immediates {
     center: vec2f,
     extent: vec2f,
+    mode: i32,
 }
 
 var<immediate> immediates: Immediates;
@@ -34,5 +35,9 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOut {
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
-    return textureSample(input_texture, linear_sampler, in.texcoord);
+    let color = textureSample(input_texture, linear_sampler, in.texcoord);
+    if immediates.mode == 1 {
+        return floor(color * 4.0) / 3.0;
+    }
+    return color;
 }
