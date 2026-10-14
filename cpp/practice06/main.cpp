@@ -13,6 +13,7 @@
 #include <unordered_set>
 
 static std::filesystem::path const projectRoot = PROJECT_ROOT;
+static constexpr uint32_t s_textureLayerCount = 4;
 
 WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const & path) {
     auto const source = loadFile(path);
@@ -106,9 +107,18 @@ WGPURenderPipeline createMainPipeline(WGPUDevice device, WGPUShaderModule shader
     return renderPipeline;
 }
 
+enum class ShaderMode: int32_t {
+    Id = 0,
+    ColorGrading = 1,
+    DomainWarping = 2,
+    GaussianBlur = 3,
+};
+
 struct TextureImmediates {
     math::vector2f center;
     math::vector2f extent;
+    ShaderMode mode;
+    float time;
 };
 
 WGPURenderPipeline createTexturePipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout textureBindGroupLayout) {
@@ -142,18 +152,70 @@ WGPURenderPipeline createTexturePipeline(WGPUDevice device, WGPUShaderModule sha
     return renderPipeline;
 }
 
+WGPUSampler createSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.addressModeU = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeV = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeW = WGPUAddressMode_ClampToEdge;
+    descriptor.minFilter = WGPUFilterMode_Linear;
+    descriptor.magFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Linear;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
+}
+
+WGPUTexture createTexture(WGPUDevice device, uint32_t width, uint32_t height) {
+    WGPUExtent3D extent = WGPU_EXTENT_3D_INIT;
+    extent.width = width;
+    extent.height = height;
+    extent.depthOrArrayLayers = s_textureLayerCount;
+
+    WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+    descriptor.size = extent;
+    descriptor.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    descriptor.dimension = WGPUTextureDimension_2D;
+
+    return wgpuDeviceCreateTexture(device, &descriptor);
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, WGPUBindGroupLayout layout, WGPUTextureView textureView, WGPUSampler sampler) {
+    WGPUBindGroupEntry entries[2];
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].textureView = textureView;
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].sampler = sampler;
+
+    WGPUBindGroupDescriptor descriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    descriptor.entryCount = 2;
+    descriptor.entries = entries;
+    descriptor.layout = layout;
+
+    return wgpuDeviceCreateBindGroup(device, &descriptor);
+}
+
 int main() try {
     WgpuApp app("Practice06", 1280, 720, false);
 
     WGPUBindGroupLayout textureBindGroupLayout = createTextureBindGroupLayout(app.device());
 
     WGPUShaderModule mainShaderModule = createShaderModule(app.device(), projectRoot / "shader_main.wgsl");
-    WGPURenderPipeline mainRenderPipeline = createMainPipeline(app.device(), mainShaderModule, app.surfaceFormat());
+    WGPURenderPipeline mainRenderPipeline = createMainPipeline(app.device(), mainShaderModule, WGPUTextureFormat_RGBA8Unorm);
 
     WGPUShaderModule textureShaderModule = createShaderModule(app.device(), projectRoot / "shader_texture.wgsl");
     WGPURenderPipeline textureRenderPipeline = createTexturePipeline(app.device(), textureShaderModule, app.surfaceFormat(), textureBindGroupLayout);
 
     ObjMesh dragon = loadObj(projectRoot / "dragon.obj");
+
+    WGPUSampler dragonSampler = createSampler(app.device());
+    WGPUTexture dragonTexture = nullptr;
+    WGPUTextureView dragonTextureViews[s_textureLayerCount] = {};
+
+    WGPUBindGroup bindGroups[s_textureLayerCount] = {};
 
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), dragon.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), dragon.indices, WGPUBufferUsage_Index);
@@ -194,14 +256,44 @@ int main() try {
             continue;
         }
 
-        if (!depthBuffer || wgpuTextureGetWidth(depthBuffer) != app.width() || wgpuTextureGetHeight(depthBuffer) != app.height()) {
+        const uint32_t newWidth = app.width() / 2;
+        const uint32_t newHeight = app.height() / 2;
+
+        const bool resized = !depthBuffer || wgpuTextureGetWidth(depthBuffer) != newWidth || wgpuTextureGetHeight(depthBuffer) != newHeight;
+
+        if (resized) {
+            for (auto bindGroup : bindGroups) {
+                if (bindGroup) wgpuBindGroupRelease(bindGroup);
+            }
+            for (auto textureView : dragonTextureViews) {
+                if (textureView) wgpuTextureViewRelease(textureView);
+            }
+            if (dragonTexture) wgpuTextureRelease(dragonTexture);
+
+            dragonTexture = createTexture(app.device(), newWidth, newHeight);
+
+            for (uint32_t i = 0; i < s_textureLayerCount; ++i) {
+                WGPUTextureViewDescriptor descriptor = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+                descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+                descriptor.dimension = WGPUTextureViewDimension_2D;
+                descriptor.baseMipLevel = 0;
+                descriptor.mipLevelCount = 1;
+                descriptor.baseArrayLayer = i;
+                descriptor.arrayLayerCount = 1;
+
+                dragonTextureViews[i] = wgpuTextureCreateView(dragonTexture, &descriptor);
+                bindGroups[i] = createBindGroup(app.device(), textureBindGroupLayout, dragonTextureViews[i], dragonSampler);
+            }
+        }
+
+        if (resized) {
             if (depthBufferView) wgpuTextureViewRelease(depthBufferView);
             if (depthBuffer) wgpuTextureRelease(depthBuffer);
 
             WGPUTextureDescriptor depthBufferDescriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
             depthBufferDescriptor.usage = WGPUTextureUsage_RenderAttachment;
             depthBufferDescriptor.dimension = WGPUTextureDimension_2D;
-            depthBufferDescriptor.size = {(std::uint32_t)app.width(), (std::uint32_t)app.height(), 1};
+            depthBufferDescriptor.size = {newWidth, newHeight, 1};
             depthBufferDescriptor.format = WGPUTextureFormat_Depth24Plus;
             depthBuffer = wgpuDeviceCreateTexture(app.device(), &depthBufferDescriptor);
 
@@ -229,41 +321,108 @@ int main() try {
         math::matrix4f const view = math::translation(math::vector{0.f, 0.f, - camera_distance});
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
+        const float aspect = static_cast<float>(app.width()) / app.height();
+        const float halfPi = 0.5f * std::numbers::pi_v<float>;
+        const math::matrix4f orthoProjection = math::orthographic(-aspect, aspect, -1.f, 1.f, -0.01f, -100.f);
+
         auto const modelTranspose = math::transpose(model);
-        auto const viewProjectionTranspose = math::transpose(projection * view);
+
+        math::matrix4f const viewProjectionTransposes[s_textureLayerCount] = {
+            math::transpose(projection * view),
+            math::transpose(orthoProjection * view),
+            math::transpose(orthoProjection * view * math::rotation_xz(halfPi)),
+            math::transpose(orthoProjection * view * math::rotation_yz(halfPi)),
+        };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
 
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
 
+        // 4 pipelines to draw in each texture view
+
+        WGPUColor clearValues[s_textureLayerCount] = {
+            {0.00, 0.26, 0.40, 1.0},
+            {0.68, 0.81, 0.74, 1.0},
+            {0.77, 0.72, 0.86, 1.0},
+            {0.88, 0.76, 0.70, 1.0},
+        };
+
+        for (int i = 0; i < s_textureLayerCount; ++i) {
+            WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+            colorAttachment.view = dragonTextureViews[i];
+            colorAttachment.loadOp = WGPULoadOp_Clear;
+            colorAttachment.storeOp = WGPUStoreOp_Store;
+            colorAttachment.clearValue = clearValues[i];
+
+            WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+            depthStencilAttachment.view = depthBufferView;
+            depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
+            depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
+            depthStencilAttachment.depthClearValue = 1.f;
+            depthStencilAttachment.depthReadOnly = WGPU_FALSE;
+
+            WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+            renderPassDescriptor.colorAttachmentCount = 1;
+            renderPassDescriptor.colorAttachments = &colorAttachment;
+            renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+            WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+            wgpuRenderPassEncoderSetPipeline(renderPass, mainRenderPipeline);
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
+            wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTransposes[i], sizeof(viewProjectionTransposes[i]));
+            wgpuRenderPassEncoderDrawIndexed(renderPass, dragon.indices.size(), 1, 0, 0, 0);
+
+            wgpuRenderPassEncoderEnd(renderPass);
+            wgpuRenderPassEncoderRelease(renderPass);
+        }
+
+        // second render pass, just reusing same variables
+
+        math::vector2f centers[s_textureLayerCount] = {
+            {-0.5f, -0.5f},
+            {0.5f, -0.5f},
+            {-0.5f, 0.5f},
+            {0.5f, 0.5f},
+        };
+
+        ShaderMode shaderMode[s_textureLayerCount] = {
+            ShaderMode::Id,
+            ShaderMode::ColorGrading,
+            ShaderMode::DomainWarping,
+            ShaderMode::GaussianBlur,
+        };
+
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
         colorAttachment.view = targetView;
         colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
-        colorAttachment.clearValue = {0.00, 0.06, 0.10, 1.0};
-
-        WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
-        depthStencilAttachment.view = depthBufferView;
-        depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
-        depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
-        depthStencilAttachment.depthClearValue = 1.f;
-        depthStencilAttachment.depthReadOnly = WGPU_FALSE;
 
         WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
         renderPassDescriptor.colorAttachmentCount = 1;
         renderPassDescriptor.colorAttachments = &colorAttachment;
-        renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
-        wgpuRenderPassEncoderSetPipeline(renderPass, mainRenderPipeline);
-        wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
-        wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
-        wgpuRenderPassEncoderDrawIndexed(renderPass, dragon.indices.size(), 1, 0, 0, 0);
+        for (int i = 0; i < s_textureLayerCount; ++i) {
+            TextureImmediates const textureImmediates{
+                .center = centers[i],
+                .extent = {0.5f, 0.5f},
+                .mode = shaderMode[i],
+                .time = time,
+            };
+
+            wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
+            wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroups[i], 0, nullptr);
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &textureImmediates, sizeof(textureImmediates));
+            wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
+        }
 
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
+        
+        // submitting and releasing
 
         WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, nullptr);
         wgpuCommandEncoderRelease(encoder);
@@ -282,6 +441,15 @@ int main() try {
 
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
+
+    for (auto bindGroup : bindGroups) {
+        if (bindGroup) wgpuBindGroupRelease(bindGroup);
+    }
+    for (auto textureView : dragonTextureViews) {
+        if (textureView) wgpuTextureViewRelease(textureView);
+    }
+    if (dragonTexture) wgpuTextureRelease(dragonTexture);
+    wgpuSamplerRelease(dragonSampler);
 
     wgpuRenderPipelineRelease(textureRenderPipeline);
     wgpuShaderModuleRelease(textureShaderModule);
