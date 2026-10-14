@@ -39,9 +39,11 @@ WGPUBuffer loadBuffer(WGPUDevice device, WGPUQueue queue, std::vector<T> const &
 }
 
 WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModule,
-                                  WGPUTextureFormat surfaceFormat) {
+                                  WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
     WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pipelineLayoutDescriptor.immediateSize = 128;
+    pipelineLayoutDescriptor.immediateSize = sizeof(float);
+    pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+    pipelineLayoutDescriptor.bindGroupLayouts = &bindGroupLayout;
 
     WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
 
@@ -55,17 +57,20 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
-    WGPUVertexAttribute attributes[2] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
+    WGPUVertexAttribute attributes[3] = {WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT, WGPU_VERTEX_ATTRIBUTE_INIT};
     attributes[0].offset = 0;
     attributes[0].shaderLocation = 0;
     attributes[0].format = WGPUVertexFormat_Float32x3;
     attributes[1].offset = 12;
     attributes[1].shaderLocation = 1;
     attributes[1].format = WGPUVertexFormat_Float32x3;
+    attributes[2].shaderLocation = 2;
+    attributes[2].format = WGPUVertexFormat_Float32x2;
+    attributes[2].offset = offsetof(ObjVertex, texcoord); // 24
 
     WGPUVertexBufferLayout vertexBufferLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
     vertexBufferLayout.arrayStride = sizeof(ObjVertex);
-    vertexBufferLayout.attributeCount = 2;
+    vertexBufferLayout.attributeCount = 3;
     vertexBufferLayout.attributes = attributes;
     vertexBufferLayout.stepMode = WGPUVertexStepMode_Vertex;
 
@@ -91,15 +96,153 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+WGPUBuffer createUniformBuffer(WGPUDevice device, uint64_t bufferSize) {
+    WGPUBufferDescriptor bufferDescriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+    bufferDescriptor.size = bufferSize;
+    bufferDescriptor.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+
+    return wgpuDeviceCreateBuffer(device, &bufferDescriptor);
+}
+
+WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, const Image& image) {
+    WGPUExtent3D extent3D = WGPU_EXTENT_3D_INIT;
+    extent3D.width = image.width;
+    extent3D.height = image.height;
+
+    WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+    descriptor.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
+    descriptor.size = extent3D;
+    descriptor.mipLevelCount = 4;
+
+    WGPUTexture texture = wgpuDeviceCreateTexture(device, &descriptor);
+
+    WGPUTexelCopyTextureInfo texelCopyInfo = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    texelCopyInfo.texture = texture;
+    texelCopyInfo.aspect = WGPUTextureAspect_All;
+    texelCopyInfo.mipLevel = 0; // our real texture, biggest mip level
+
+    WGPUTexelCopyBufferLayout copyLayout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+    copyLayout.offset = 0;
+    copyLayout.bytesPerRow = image.width * sizeof(Image::Pixel);
+    copyLayout.rowsPerImage = image.height;
+
+    size_t dataSize = copyLayout.bytesPerRow * copyLayout.rowsPerImage;
+
+    wgpuQueueWriteTexture(queue, &texelCopyInfo, image.pixels.get(), dataSize, &copyLayout, &extent3D);
+
+    Image::Pixel const mipColors[] = {
+        {255, 0, 0, 255}, // red
+        {0, 255, 0, 255}, // green
+        {0, 0, 255, 255}, // blue
+    };
+
+    for (uint32_t level = 0; level < 3; ++level) {
+        extent3D.width = std::max(1u, extent3D.width / 2);
+        extent3D.height = std::max(1u, extent3D.height / 2);
+
+        std::vector<Image::Pixel> pixels(extent3D.width * extent3D.height, mipColors[level]);
+
+        // reusing
+        texelCopyInfo.mipLevel = level + 1;
+        copyLayout.bytesPerRow = extent3D.width * sizeof(Image::Pixel);
+        copyLayout.rowsPerImage = extent3D.height;
+
+        dataSize = copyLayout.bytesPerRow * copyLayout.rowsPerImage;
+
+        wgpuQueueWriteTexture(queue, &texelCopyInfo, pixels.data(), dataSize, &copyLayout, &extent3D);
+    }
+
+    return texture;
+}
+
+WGPUSampler createTextureSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.addressModeU = WGPUAddressMode_Repeat;
+    descriptor.addressModeV = WGPUAddressMode_Repeat;
+    descriptor.magFilter = WGPUFilterMode_Nearest;
+    descriptor.minFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
+}
+
+WGPUBindGroupLayout createBindGroupLayout(WGPUDevice device) {
+    WGPUBindGroupLayoutEntry entries[3];
+
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Vertex;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Fragment;
+    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor layoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    layoutDescriptor.entryCount = 3;
+    layoutDescriptor.entries = entries;
+
+    return wgpuDeviceCreateBindGroupLayout(device, &layoutDescriptor);
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, WGPUBindGroupLayout layout,
+                              WGPUBuffer buffer, uint64_t bufferSize,
+                              WGPUTextureView textureView, WGPUSampler sampler) {
+    WGPUBindGroupEntry entries[3];
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].buffer = buffer;
+    entries[0].offset = 0;
+    entries[0].size = bufferSize;
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].textureView = textureView;
+
+    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].sampler = sampler;
+
+    WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bindGroupDescriptor.entryCount = 3;
+    bindGroupDescriptor.entries = entries;
+    bindGroupDescriptor.layout = layout;
+
+    return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
+}
+
 int main() try {
-    WgpuApp app("Practice05", 1280, 720, false);
+    WgpuApp app("Practice05", 720, 540, false);
+
+    uint64_t bufferSize = 2 * (4 * 4) * sizeof(float); // 2 matrices 4x4
+    WGPUBuffer buffer = createUniformBuffer(app.device(), bufferSize);
+    WGPUBindGroupLayout bindGroupLayout = createBindGroupLayout(app.device());
+
+    Image cowImage = loadImage(projectRoot / "cow.png");
+    WGPUTexture cowTexture = loadTexture(app.device(), app.queue(), cowImage);
+    WGPUTextureView cowTextureView = wgpuTextureCreateView(cowTexture, nullptr);
+    WGPUSampler sampler = createTextureSampler(app.device());
+
+    WGPUBindGroup bindGroup = createBindGroup(app.device(), bindGroupLayout,
+                                              buffer, bufferSize,
+                                              cowTextureView, sampler);
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
-    WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat());
+    WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), bindGroupLayout);
+
+    wgpuBindGroupLayoutRelease(bindGroupLayout);
 
     ObjMesh cow = loadObj(projectRoot / "cow.obj");
-    Image cowImage = loadImage(projectRoot / "cow.png");
-
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), cow.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), cow.indices, WGPUBufferUsage_Index);
 
@@ -174,6 +317,12 @@ int main() try {
         math::matrix4f const view = math::translation(math::vector{0.f, 0.f, - camera_distance});
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
+        auto modelTranspose = math::transpose(model);
+        auto viewProjectionTranspose = math::transpose(projection * view);
+
+        wgpuQueueWriteBuffer(app.queue(), buffer, 0, &modelTranspose, sizeof(modelTranspose));
+        wgpuQueueWriteBuffer(app.queue(), buffer, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
+
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
 
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
@@ -199,13 +348,13 @@ int main() try {
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
 
-        auto modelTranspose = math::transpose(model);
-        auto viewProjectionTranspose = math::transpose(projection * view);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
-        wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &time, sizeof(time));
+
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
 
         wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+
         wgpuRenderPassEncoderDrawIndexed(renderPass, cow.indices.size(), 1, 0, 0, 0);
 
         wgpuRenderPassEncoderEnd(renderPass);
@@ -229,8 +378,13 @@ int main() try {
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
 
+    wgpuSamplerRelease(sampler);
+    wgpuTextureViewRelease(cowTextureView);
+    wgpuTextureRelease(cowTexture);
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
+    wgpuBindGroupRelease(bindGroup);
+    wgpuBufferRelease(buffer);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
