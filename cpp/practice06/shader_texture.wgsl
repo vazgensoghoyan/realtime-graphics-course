@@ -34,8 +34,29 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOut {
     );
 }
 
+fn gaussianBlur(in: VertexOut) -> vec4f {
+    const N = 10;
+    const sigma = 6.0;
+    var sum = vec4f(0.0);
+    var sum_weights = 0.0;
+    let size = vec2f(textureDimensions(input_texture, 0));
+    for (var x = -N; x <= N; x += 1) {
+        for (var y = -N; y <= N; y += 1) {
+            let offset = vec2f(vec2i(x, y));
+            let weight = exp(- dot(offset, offset) / 2.0 / (sigma * sigma));
+            sum += textureSampleLevel(input_texture, linear_sampler, in.texcoord + offset / size, 0) * weight;
+            sum_weights += weight;
+        }
+    }
+    return sum / sum_weights;
+}
+
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
+    if immediates.mode == 3 {
+        return gaussianBlur(in);
+    }
+
     var texcoord = in.texcoord;
 
     // domain warping

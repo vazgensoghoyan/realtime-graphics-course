@@ -111,6 +111,7 @@ enum class ShaderMode: int32_t {
     Id = 0,
     ColorGrading = 1,
     DomainWarping = 2,
+    GaussianBlur = 3,
 };
 
 struct TextureImmediates {
@@ -390,7 +391,7 @@ int main() try {
             ShaderMode::Id,
             ShaderMode::ColorGrading,
             ShaderMode::DomainWarping,
-            ShaderMode::Id,
+            ShaderMode::GaussianBlur,
         };
 
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
