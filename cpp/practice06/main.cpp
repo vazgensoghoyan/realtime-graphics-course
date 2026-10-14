@@ -107,9 +107,15 @@ WGPURenderPipeline createMainPipeline(WGPUDevice device, WGPUShaderModule shader
     return renderPipeline;
 }
 
+enum class ShaderMode: int32_t {
+    Id = 0,
+    ColorGrading = 1,
+};
+
 struct TextureImmediates {
     math::vector2f center;
     math::vector2f extent;
+    ShaderMode mode;
 };
 
 WGPURenderPipeline createTexturePipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout textureBindGroupLayout) {
@@ -320,8 +326,8 @@ int main() try {
 
         math::matrix4f const viewProjectionTransposes[s_textureLayerCount] = {
             math::transpose(projection * view),
-            math::transpose(orthoProjection * view * math::rotation_xz(halfPi)),
             math::transpose(orthoProjection * view),
+            math::transpose(orthoProjection * view * math::rotation_xz(halfPi)),
             math::transpose(orthoProjection * view * math::rotation_yz(halfPi)),
         };
 
@@ -333,8 +339,8 @@ int main() try {
 
         WGPUColor clearValues[s_textureLayerCount] = {
             {0.00, 0.26, 0.40, 1.0},
-            {0.77, 0.72, 0.86, 1.0},
             {0.68, 0.81, 0.74, 1.0},
+            {0.77, 0.72, 0.86, 1.0},
             {0.88, 0.76, 0.70, 1.0},
         };
 
@@ -373,9 +379,16 @@ int main() try {
 
         math::vector2f centers[s_textureLayerCount] = {
             {-0.5f, -0.5f},
-            {-0.5f, 0.5f},
             {0.5f, -0.5f},
+            {-0.5f, 0.5f},
             {0.5f, 0.5f},
+        };
+
+        ShaderMode shaderMode[s_textureLayerCount] = {
+            ShaderMode::Id,
+            ShaderMode::ColorGrading,
+            ShaderMode::Id,
+            ShaderMode::Id,
         };
 
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
@@ -393,6 +406,7 @@ int main() try {
             TextureImmediates const textureImmediates{
                 .center = centers[i],
                 .extent = {0.5f, 0.5f},
+                .mode = shaderMode[i],
             };
 
             wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
