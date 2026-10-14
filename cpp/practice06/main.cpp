@@ -312,63 +312,98 @@ int main() try {
         math::matrix4f const view = math::translation(math::vector{0.f, 0.f, - camera_distance});
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
+        const float aspect = static_cast<float>(app.width()) / app.height();
+        const float halfPi = 0.5f * std::numbers::pi_v<float>;
+        const math::matrix4f orthoProjection = math::orthographic(-aspect, aspect, -1.f, 1.f, -0.01f, -100.f);
+
         auto const modelTranspose = math::transpose(model);
-        auto const viewProjectionTranspose = math::transpose(projection * view);
+
+        math::matrix4f const viewProjectionTransposes[s_textureLayerCount] = {
+            math::transpose(projection * view),
+            math::transpose(orthoProjection * view * math::rotation_xz(halfPi)),
+            math::transpose(orthoProjection * view),
+            math::transpose(orthoProjection * view * math::rotation_yz(halfPi)),
+        };
 
         WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture->texture, nullptr);
 
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
 
+        // 4 pipelines to draw in each texture view
+
+        WGPUColor clearValues[s_textureLayerCount] = {
+            {0.00, 0.26, 0.40, 1.0},
+            {0.77, 0.72, 0.86, 1.0},
+            {0.68, 0.81, 0.74, 1.0},
+            {0.88, 0.76, 0.70, 1.0},
+        };
+
+        for (int i = 0; i < s_textureLayerCount; ++i) {
+            WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+            colorAttachment.view = dragonTextureViews[i];
+            colorAttachment.loadOp = WGPULoadOp_Clear;
+            colorAttachment.storeOp = WGPUStoreOp_Store;
+            colorAttachment.clearValue = clearValues[i];
+
+            WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+            depthStencilAttachment.view = depthBufferView;
+            depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
+            depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
+            depthStencilAttachment.depthClearValue = 1.f;
+            depthStencilAttachment.depthReadOnly = WGPU_FALSE;
+
+            WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+            renderPassDescriptor.colorAttachmentCount = 1;
+            renderPassDescriptor.colorAttachments = &colorAttachment;
+            renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+            WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+            wgpuRenderPassEncoderSetPipeline(renderPass, mainRenderPipeline);
+            wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
+            wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTransposes[i], sizeof(viewProjectionTransposes[i]));
+            wgpuRenderPassEncoderDrawIndexed(renderPass, dragon.indices.size(), 1, 0, 0, 0);
+
+            wgpuRenderPassEncoderEnd(renderPass);
+            wgpuRenderPassEncoderRelease(renderPass);
+        }
+
+        // second render pass, just reusing same variables
+
+        math::vector2f centers[s_textureLayerCount] = {
+            {-0.5f, -0.5f},
+            {-0.5f, 0.5f},
+            {0.5f, -0.5f},
+            {0.5f, 0.5f},
+        };
+
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        colorAttachment.view = dragonTextureViews[0];
+        colorAttachment.view = targetView;
         colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
-        colorAttachment.clearValue = {0.00, 0.06, 0.10, 1.0};
-
-        WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
-        depthStencilAttachment.view = depthBufferView;
-        depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
-        depthStencilAttachment.depthStoreOp = WGPUStoreOp_Discard;
-        depthStencilAttachment.depthClearValue = 1.f;
-        depthStencilAttachment.depthReadOnly = WGPU_FALSE;
 
         WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
         renderPassDescriptor.colorAttachmentCount = 1;
         renderPassDescriptor.colorAttachments = &colorAttachment;
-        renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
-        wgpuRenderPassEncoderSetPipeline(renderPass, mainRenderPipeline);
-        wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &modelTranspose, sizeof(modelTranspose));
-        wgpuRenderPassEncoderSetImmediates(renderPass, 64, &viewProjectionTranspose, sizeof(viewProjectionTranspose));
-        wgpuRenderPassEncoderDrawIndexed(renderPass, dragon.indices.size(), 1, 0, 0, 0);
+        for (int i = 0; i < s_textureLayerCount; ++i) {
+            TextureImmediates const textureImmediates{
+                .center = centers[i],
+                .extent = {0.5f, 0.5f},
+            };
+
+            wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
+            wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroups[i], 0, nullptr);
+            wgpuRenderPassEncoderSetImmediates(renderPass, 0, &textureImmediates, sizeof(textureImmediates));
+            wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
+        }
 
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
-
-        // second render pass, just reusing same variables
-
-        TextureImmediates const textureImmediates{
-            .center = {-0.5f, -0.5f},
-            .extent = {0.5f, 0.5f},
-        };
-
-        colorAttachment.view = targetView;
-        colorAttachment.loadOp = WGPULoadOp_Clear;
-        colorAttachment.storeOp = WGPUStoreOp_Store;
-        renderPassDescriptor.depthStencilAttachment = nullptr;
-        renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
-
-        wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
-        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroups[0], 0, nullptr);
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &textureImmediates, sizeof(textureImmediates));
-        wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
-
-        wgpuRenderPassEncoderEnd(renderPass);
-        wgpuRenderPassEncoderRelease(renderPass);
-
+        
         // submitting and releasing
 
         WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, nullptr);
