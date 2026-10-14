@@ -13,6 +13,7 @@
 #include <unordered_set>
 
 static std::filesystem::path const projectRoot = PROJECT_ROOT;
+static constexpr uint32_t s_textureLayerCount = 4;
 
 WGPUShaderModule createShaderModule(WGPUDevice device, std::filesystem::path const & path) {
     auto const source = loadFile(path);
@@ -158,6 +159,7 @@ WGPUTexture createTexture(WGPUDevice device, uint32_t width, uint32_t height) {
     WGPUExtent3D extent = WGPU_EXTENT_3D_INIT;
     extent.width = width;
     extent.height = height;
+    extent.depthOrArrayLayers = s_textureLayerCount;
 
     WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
     descriptor.format = WGPUTextureFormat_RGBA8Unorm;
@@ -202,9 +204,9 @@ int main() try {
 
     WGPUSampler dragonSampler = createSampler(app.device());
     WGPUTexture dragonTexture = nullptr;
-    WGPUTextureView dragonTextureView = nullptr;
+    WGPUTextureView dragonTextureViews[s_textureLayerCount] = {};
 
-    WGPUBindGroup bindGroup = nullptr;
+    WGPUBindGroup bindGroups[s_textureLayerCount] = {};
 
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), dragon.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), dragon.indices, WGPUBufferUsage_Index);
@@ -251,13 +253,28 @@ int main() try {
         const bool resized = !depthBuffer || wgpuTextureGetWidth(depthBuffer) != newWidth || wgpuTextureGetHeight(depthBuffer) != newHeight;
 
         if (resized) {
-            if (bindGroup) wgpuBindGroupRelease(bindGroup);
-            if (dragonTextureView) wgpuTextureViewRelease(dragonTextureView);
+            for (auto bindGroup : bindGroups) {
+                if (bindGroup) wgpuBindGroupRelease(bindGroup);
+            }
+            for (auto textureView : dragonTextureViews) {
+                if (textureView) wgpuTextureViewRelease(textureView);
+            }
             if (dragonTexture) wgpuTextureRelease(dragonTexture);
 
             dragonTexture = createTexture(app.device(), newWidth, newHeight);
-            dragonTextureView = wgpuTextureCreateView(dragonTexture, nullptr);
-            bindGroup = createBindGroup(app.device(), textureBindGroupLayout, dragonTextureView, dragonSampler);
+
+            for (uint32_t i = 0; i < s_textureLayerCount; ++i) {
+                WGPUTextureViewDescriptor descriptor = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+                descriptor.format = WGPUTextureFormat_RGBA8Unorm;
+                descriptor.dimension = WGPUTextureViewDimension_2D;
+                descriptor.baseMipLevel = 0;
+                descriptor.mipLevelCount = 1;
+                descriptor.baseArrayLayer = i;
+                descriptor.arrayLayerCount = 1;
+
+                dragonTextureViews[i] = wgpuTextureCreateView(dragonTexture, &descriptor);
+                bindGroups[i] = createBindGroup(app.device(), textureBindGroupLayout, dragonTextureViews[i], dragonSampler);
+            }
         }
 
         if (resized) {
@@ -303,7 +320,7 @@ int main() try {
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
 
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        colorAttachment.view = dragonTextureView;
+        colorAttachment.view = dragonTextureViews[0];
         colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
         colorAttachment.clearValue = {0.00, 0.06, 0.10, 1.0};
@@ -345,7 +362,7 @@ int main() try {
         renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, textureRenderPipeline);
-        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroups[0], 0, nullptr);
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &textureImmediates, sizeof(textureImmediates));
         wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
 
@@ -372,9 +389,12 @@ int main() try {
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
 
-    if (bindGroup) wgpuBindGroupRelease(bindGroup);
-
-    if (dragonTextureView) wgpuTextureViewRelease(dragonTextureView);
+    for (auto bindGroup : bindGroups) {
+        if (bindGroup) wgpuBindGroupRelease(bindGroup);
+    }
+    for (auto textureView : dragonTextureViews) {
+        if (textureView) wgpuTextureViewRelease(textureView);
+    }
     if (dragonTexture) wgpuTextureRelease(dragonTexture);
     wgpuSamplerRelease(dragonSampler);
 
