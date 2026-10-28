@@ -16,11 +16,14 @@ struct CameraUniforms {
 }
 
 struct LightsUniforms {
+    lightDirection: vec3f,
     ambientIntensity: vec3f,
+    intensity: f32,
 }
 
 struct Immediates {
     model: mat4x4f,
+    albedo: vec3f,
 }
 
 @group(0) @binding(0) var<uniform> camera: CameraUniforms;
@@ -42,7 +45,9 @@ fn vertexMain(in: VertexIn) -> VertexOut {
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let normal = normalize(in.normal);
 
-    let color = lights.ambientIntensity;
+    let color = 
+        immediates.albedo * lights.intensity
+            * (lights.ambientIntensity + vec3f(max(0.0, dot(normal, lights.lightDirection))));
 
     return vec4f(color, 1.0);
 }

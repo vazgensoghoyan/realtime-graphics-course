@@ -24,13 +24,16 @@ struct CameraUniforms
 
 struct LightsUniforms
 {
-    math::vector3f ambientIntensity;
+    math::vector3f lightDirection; // normalized
     float padding = 0.f;
+    math::vector3f ambientIntensity;
+    float intensity;
 };
 
 struct Immediates
 {
     math::matrix4f modelTranspose;
+    math::vector3f albedo; // color, components from 0 to 1
 };
 
 struct LightImmediates
@@ -297,8 +300,13 @@ int main() try {
 
         wgpuQueueWriteBuffer(app.queue(), cameraUniformBuffer, 0, &cameraUniforms, sizeof(cameraUniforms));
 
+        math::vector3f lightDirection = {std::cos(time), 1.0f, std::sin(time)};
+        lightDirection = math::normalized(std::move(lightDirection));
+
         LightsUniforms const lightUniforms {
+            .lightDirection = std::move(lightDirection),
             .ambientIntensity = {0.01f, 0.01f, 0.01f},
+            .intensity = 0.9f,
         };
 
         wgpuQueueWriteBuffer(app.queue(), lightsUniformBuffer, 0, &lightUniforms, sizeof(lightUniforms));
@@ -333,6 +341,7 @@ int main() try {
 
         Immediates const immediates {
             .modelTranspose = math::transpose(model),
+            .albedo = {0.1f, 0.7f, 0.35f},
         };
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
         wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
