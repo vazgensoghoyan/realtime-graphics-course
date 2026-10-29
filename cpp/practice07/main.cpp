@@ -22,12 +22,20 @@ struct CameraUniforms
     float padding = 0.f;
 };
 
+struct PointLight {
+    math::vector3f position;
+    float intensity;
+    math::vector3f attenuation;
+    float padding = 0.f;
+};
+
 struct LightsUniforms
 {
     math::vector3f lightDirection; // normalized
     float padding = 0.f;
     math::vector3f ambientIntensity;
     float intensity;
+    PointLight pointLight;
 };
 
 struct Immediates
@@ -300,6 +308,12 @@ int main() try {
 
         wgpuQueueWriteBuffer(app.queue(), cameraUniformBuffer, 0, &cameraUniforms, sizeof(cameraUniforms));
 
+        PointLight pointLight {
+            .position = {-1.5f, 1.5f * std::sin(1.7f * time), 1.5f},
+            .intensity = 0.7f,
+            .attenuation = {1.f, 0.f, 0.1f},
+        };
+
         math::vector3f lightDirection = {std::cos(time), 1.0f, std::sin(time)};
         lightDirection = math::normalized(std::move(lightDirection));
 
@@ -307,6 +321,7 @@ int main() try {
             .lightDirection = std::move(lightDirection),
             .ambientIntensity = {0.01f, 0.01f, 0.01f},
             .intensity = 0.9f,
+            .pointLight = pointLight,
         };
 
         wgpuQueueWriteBuffer(app.queue(), lightsUniformBuffer, 0, &lightUniforms, sizeof(lightUniforms));
@@ -350,9 +365,8 @@ int main() try {
 
         wgpuRenderPassEncoderSetPipeline(renderPass, lightRenderPipeline);
 
-        math::vector3f pointLightPosition = {-1.5f, 1.5f * std::sin(1.7f * time), 1.5f};
         const LightImmediates lightImmediates {
-            .position = pointLightPosition,
+            .position = pointLight.position,
         };
 
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &lightImmediates, sizeof(LightImmediates));

@@ -15,10 +15,17 @@ struct CameraUniforms {
     position: vec3f,
 }
 
+struct PointLight {
+    position: vec3f,
+    intensity: f32,
+    attenuation: vec3f,
+}
+
 struct LightsUniforms {
     lightDirection: vec3f,
     ambientIntensity: vec3f,
     intensity: f32,
+    pointLight: PointLight,
 }
 
 struct Immediates {
@@ -41,13 +48,32 @@ fn vertexMain(in: VertexIn) -> VertexOut {
     );
 }
 
+fn computePointLighting(vertex: vec3f, normal: vec3f, light: PointLight) -> f32 {
+    let to_light = light.position - vertex;
+    let dir = normalize(to_light);
+    let d = length(to_light);
+
+    let c0 = light.attenuation.x;
+    let c1 = light.attenuation.y;
+    let c2 = light.attenuation.z;
+
+    let attenuation = light.intensity / (c0 + c1 * d + c2 * d * d);
+
+    return attenuation * max(0.0, dot(normal, dir));
+}
+
+fn computeDirectionalLighting(normal: vec3f, light_dir: vec3f, intensity: f32) -> vec3f {
+    return intensity * vec3f(max(0.0, dot(normal, light_dir)));
+}
+
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let normal = normalize(in.normal);
 
-    let color = 
-        immediates.albedo * lights.intensity
-            * (lights.ambientIntensity + vec3f(max(0.0, dot(normal, lights.lightDirection))));
+    let pointLighting = computePointLighting(in.world_position, normal, lights.pointLight);
+    let sun = computeDirectionalLighting(normal, lights.lightDirection, lights.intensity);
+
+    let color = immediates.albedo * (lights.ambientIntensity + sun + vec3f(pointLighting));
 
     return vec4f(color, 1.0);
 }
