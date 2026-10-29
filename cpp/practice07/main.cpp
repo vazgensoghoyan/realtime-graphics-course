@@ -302,7 +302,6 @@ int main() try {
         if (keydown.contains(SDLK_UP)) camera_distance += 7.f * dt;
         if (keydown.contains(SDLK_DOWN)) camera_distance -= 7.f * dt;
 
-        math::matrix4f const model = math::matrix4f::identity();
         math::matrix4f const view = math::translation(math::vector{0.f, 0.f, - camera_distance})
             * math::rotation_xz(camera_rotation);
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
@@ -315,8 +314,8 @@ int main() try {
         wgpuQueueWriteBuffer(app.queue(), cameraUniformBuffer, 0, &cameraUniforms, sizeof(cameraUniforms));
 
         PointLight pointLight {
-            .position = {-1.5f, 1.5f * std::sin(1.7f * time), 1.5f},
-            .intensity = {0.5f, 0.13f, 0.08f},
+            .position = {1.5f * std::cos(time), 1.5f * std::sin(time), 1.5f},
+            .intensity = {0.9f, 0.234f, 0.144f},
             .attenuation = {1.f, 0.f, 0.1f},
         };
 
@@ -360,16 +359,35 @@ int main() try {
         wgpuRenderPassEncoderSetBindGroup(renderPass, 0, cameraBindGroup, 0, nullptr);
         wgpuRenderPassEncoderSetBindGroup(renderPass, 1, lightsBindGroup, 0, nullptr);
 
-        const Immediates immediates {
-            .modelTranspose = math::transpose(model),
-            .albedo = {1.f, 1.f, 1.f},
-            .roughness = 0.05f,
-            .specularFactor = 1.f,
-        };
-        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
         wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderDrawIndexed(renderPass, suzanne.indices.size(), 1, 0, 0, 0);
+
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+
+                float const x = 1.7f * (i - 1);
+                float const y = 1.2f * (1 - j);
+
+                float const xzAngle = 0.2f * (1 - i);
+                float const yzAngle = 0.2f * (j - 1);
+
+                math::matrix4f const model =
+                    math::translation(math::vector{x, y, 0.f})
+                    * math::rotation_yz(yzAngle)
+                    * math::rotation_xz(xzAngle)
+                    * math::scale(math::vector{0.55f, 0.55f, 0.55f});
+
+                const Immediates immediates {
+                    .modelTranspose = math::transpose(model),
+                    .albedo = {1.f, 1.f, 1.f},
+                    .roughness = 0.8f * i / 2,
+                    .specularFactor = 1.f - 1.f * j / 2,
+                };
+
+                wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
+                wgpuRenderPassEncoderDrawIndexed(renderPass, suzanne.indices.size(), 1, 0, 0, 0);
+            }
+        }
 
         wgpuRenderPassEncoderSetPipeline(renderPass, lightRenderPipeline);
 
