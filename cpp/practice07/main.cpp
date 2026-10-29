@@ -46,6 +46,8 @@ struct Immediates
 {
     math::matrix4f modelTranspose;
     math::vector3f albedo; // color, components from 0 to 1
+    float roughness;
+    float specularFactor;
 };
 
 struct LightImmediates
@@ -314,7 +316,7 @@ int main() try {
 
         PointLight pointLight {
             .position = {-1.5f, 1.5f * std::sin(1.7f * time), 1.5f},
-            .intensity = {1.0f, 0.25f, 0.15f},
+            .intensity = {0.5f, 0.13f, 0.08f},
             .attenuation = {1.f, 0.f, 0.1f},
         };
 
@@ -324,7 +326,7 @@ int main() try {
         LightsUniforms const lightUniforms {
             .lightDirection = std::move(lightDirection),
             .ambientIntensity = {0.01f, 0.01f, 0.01f},
-            .intensity = {0.25f, 0.8f, 0.35f},
+            .intensity = {0.13f, 0.4f, 0.18f},
             .pointLight = pointLight,
         };
 
@@ -358,9 +360,11 @@ int main() try {
         wgpuRenderPassEncoderSetBindGroup(renderPass, 0, cameraBindGroup, 0, nullptr);
         wgpuRenderPassEncoderSetBindGroup(renderPass, 1, lightsBindGroup, 0, nullptr);
 
-        Immediates const immediates {
+        const Immediates immediates {
             .modelTranspose = math::transpose(model),
             .albedo = {1.f, 1.f, 1.f},
+            .roughness = 0.05f,
+            .specularFactor = 1.f,
         };
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &immediates, sizeof(immediates));
         wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
