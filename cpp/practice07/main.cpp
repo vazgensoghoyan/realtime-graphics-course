@@ -348,6 +348,16 @@ int main() try {
         wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderDrawIndexed(renderPass, suzanne.indices.size(), 1, 0, 0, 0);
 
+        wgpuRenderPassEncoderSetPipeline(renderPass, lightRenderPipeline);
+
+        math::vector3f pointLightPosition = {-1.5f, 1.5f * std::sin(1.7f * time), 1.5f};
+        const LightImmediates lightImmediates {
+            .position = pointLightPosition,
+        };
+
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &lightImmediates, sizeof(LightImmediates));
+        wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
+
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
