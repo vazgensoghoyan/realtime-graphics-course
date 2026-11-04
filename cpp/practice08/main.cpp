@@ -387,6 +387,16 @@ int main() try {
         wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
         wgpuRenderPassEncoderDrawIndexed(renderPass, buddha.indices.size(), 1, 0, 0, 0);
 
+        wgpuRenderPassEncoderSetPipeline(renderPass, debugDepthTextureRenderPipeline);
+        const float debugTextureWidthPart = 1.f / 5;
+        const float debugTextureHeightPart = debugTextureWidthPart * app.width() / app.height();
+        const DebugDepthTextureImmediates debugImm {
+            .center = {debugTextureWidthPart - 1, debugTextureHeightPart - 1},
+            .extent = {debugTextureWidthPart, debugTextureHeightPart},
+        };
+        wgpuRenderPassEncoderSetImmediates(renderPass, 0, &debugImm, sizeof(debugImm));
+        wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
+
         wgpuRenderPassEncoderEnd(renderPass);
         wgpuRenderPassEncoderRelease(renderPass);
 
