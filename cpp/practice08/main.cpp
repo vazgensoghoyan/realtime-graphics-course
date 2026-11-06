@@ -235,6 +235,43 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+WGPURenderPipeline createShadowPipeline(WGPUDevice device, WGPUShaderModule shaderModule) {
+    WGPUPipelineLayoutDescriptor layoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &layoutDescriptor);
+
+    WGPUVertexAttribute vertexAttribute = WGPU_VERTEX_ATTRIBUTE_INIT;
+    vertexAttribute.offset = 0;
+    vertexAttribute.shaderLocation = 0;
+    vertexAttribute.format = WGPUVertexFormat_Float32x3;
+
+    WGPUVertexBufferLayout vertexBufferLayout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
+    vertexBufferLayout.arrayStride = sizeof(ObjVertex);
+    vertexBufferLayout.attributeCount = 1;
+    vertexBufferLayout.attributes = &vertexAttribute;
+    vertexBufferLayout.stepMode = WGPUVertexStepMode_Vertex;
+
+    WGPUDepthStencilState depthStencilState = WGPU_DEPTH_STENCIL_STATE_INIT;
+    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
+    depthStencilState.depthWriteEnabled = WGPUOptionalBool_True;
+    depthStencilState.depthCompare = WGPUCompareFunction_Less;
+
+    WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    renderPipelineDescriptor.layout = pipelineLayout;
+    renderPipelineDescriptor.vertex.module = shaderModule;
+    renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+    renderPipelineDescriptor.vertex.buffers = &vertexBufferLayout;
+    renderPipelineDescriptor.vertex.bufferCount = 1;
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_Back;
+    renderPipelineDescriptor.depthStencil = &depthStencilState;
+
+    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+    wgpuPipelineLayoutRelease(pipelineLayout);
+
+    return pipeline;
+}
+
 WGPURenderPipeline createDebugDepthTexturePipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat,
         WGPUBindGroupLayout lightsBindGroupLayout) {
     WGPUBindGroupLayout bindGroupLayouts[1] = {
@@ -288,9 +325,11 @@ int main() try {
     WGPUSampler shadowSampler = createShadowSampler(app.device());
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
+    WGPUShaderModule shadowShaderModule = createShaderModule(app.device(), projectRoot / "shadow_shader.wgsl");
     WGPUShaderModule debugDepthTextureShaderModule = createShaderModule(app.device(), projectRoot / "debug_depth_texture_shader.wgsl");
 
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), cameraBindGroupLayout, lightsBindGroupLayout);
+    WGPURenderPipeline shadowRenderPipeline = createShadowPipeline(app.device(), shadowShaderModule);
     WGPURenderPipeline debugDepthTextureRenderPipeline = createDebugDepthTexturePipeline(app.device(), debugDepthTextureShaderModule, app.surfaceFormat(), lightsBindGroupLayout);
 
     WGPUBuffer cameraUniformBuffer = createBuffer(app.device(), sizeof(CameraUniforms), WGPUBufferUsage_Uniform);
@@ -403,6 +442,29 @@ int main() try {
 
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app.device(), nullptr);
 
+        // shadow depth-only render pass
+        {
+            WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+            depthStencilAttachment.view = shadowMapView;
+            depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
+            depthStencilAttachment.depthStoreOp = WGPUStoreOp_Store;
+            depthStencilAttachment.depthClearValue = 1.f;
+            depthStencilAttachment.depthReadOnly = WGPU_FALSE;
+
+            WGPURenderPassDescriptor renderPassDescriptor = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+            renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+
+            WGPURenderPassEncoder shadowRenderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+            wgpuRenderPassEncoderSetPipeline(shadowRenderPass, shadowRenderPipeline);
+            wgpuRenderPassEncoderSetVertexBuffer(shadowRenderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(shadowRenderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(shadowRenderPass, buddha.indices.size(), 1, 0, 0, 0);
+
+            wgpuRenderPassEncoderEnd(shadowRenderPass);
+            wgpuRenderPassEncoderRelease(shadowRenderPass);
+        }
+
         WGPURenderPassColorAttachment colorAttachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
         colorAttachment.view = targetView;
         colorAttachment.loadOp = WGPULoadOp_Clear;
@@ -468,6 +530,9 @@ int main() try {
 
     wgpuBufferRelease(vertexBuffer);
     wgpuBufferRelease(indexBuffer);
+
+    wgpuRenderPipelineRelease(shadowRenderPipeline);
+    wgpuShaderModuleRelease(shadowShaderModule);
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
