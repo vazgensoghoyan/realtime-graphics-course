@@ -40,6 +40,10 @@ struct Immediates
     float specularFactor;
 };
 
+struct ShadowImmediates {
+    math::matrix4f shadowProjectionTranspose;
+};
+
 struct DebugDepthTextureImmediates
 {
     math::vector2f center;
@@ -237,6 +241,7 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
 
 WGPURenderPipeline createShadowPipeline(WGPUDevice device, WGPUShaderModule shaderModule) {
     WGPUPipelineLayoutDescriptor layoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    layoutDescriptor.immediateSize = sizeof(ShadowImmediates);
 
     WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &layoutDescriptor);
 
@@ -444,6 +449,25 @@ int main() try {
 
         // shadow depth-only render pass
         {
+            const math::vector3f worldUp = {0.f, 1.f, 0.f};
+            const math::vector3f lightZ = -lightDirection;
+            const math::vector3f lightX = math::normalized(math::cross(lightZ, worldUp));
+            const math::vector3f lightY = -math::cross(lightZ, lightX);
+
+            const math::matrix4f shadowProjection =
+                math::scale(math::vector{1.f, 1.f, 0.5f})
+                * math::translation(math::vector{0.f, 0.f, 1.f})
+                * math::matrix4f::from_rows(
+                    math::append_zero(lightX),
+                    math::append_zero(lightY),
+                    math::append_zero(lightZ),
+                    math::vector4f(0, 0, 0, 1)
+                );
+
+            const ShadowImmediates immediates {
+                .shadowProjectionTranspose = math::transpose(shadowProjection),
+            };
+
             WGPURenderPassDepthStencilAttachment depthStencilAttachment = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
             depthStencilAttachment.view = shadowMapView;
             depthStencilAttachment.depthLoadOp = WGPULoadOp_Clear;
@@ -457,6 +481,8 @@ int main() try {
             WGPURenderPassEncoder shadowRenderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
 
             wgpuRenderPassEncoderSetPipeline(shadowRenderPass, shadowRenderPipeline);
+
+            wgpuRenderPassEncoderSetImmediates(shadowRenderPass, 0, &immediates, sizeof(immediates));
             wgpuRenderPassEncoderSetVertexBuffer(shadowRenderPass, 0, vertexBuffer, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(shadowRenderPass, indexBuffer, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderDrawIndexed(shadowRenderPass, buddha.indices.size(), 1, 0, 0, 0);
