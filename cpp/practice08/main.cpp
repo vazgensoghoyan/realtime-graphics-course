@@ -86,16 +86,52 @@ WGPUBindGroupLayout createCameraBindGroupLayout(WGPUDevice device) {
 }
 
 WGPUBindGroupLayout createLightsBindGroupLayout(WGPUDevice device) {
-    WGPUBindGroupLayoutEntry layoutEntries[1] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
+    WGPUBindGroupLayoutEntry layoutEntries[3];
+
+    layoutEntries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     layoutEntries[0].binding = 0;
     layoutEntries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
     layoutEntries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    layoutEntries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    layoutEntries[1].binding = 1;
+    layoutEntries[1].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[1].texture.sampleType = WGPUTextureSampleType_Depth;
+    layoutEntries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+    layoutEntries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    layoutEntries[2].binding = 2;
+    layoutEntries[2].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[2].sampler.type = WGPUSamplerBindingType_Filtering;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     bindGroupLayoutDescriptor.entries = layoutEntries;
     bindGroupLayoutDescriptor.entryCount = std::size(layoutEntries);
 
     return wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDescriptor);
+}
+
+WGPUTexture createShadowMap(WGPUDevice device, uint32_t size, WGPUTextureFormat format) {
+    WGPUTextureDescriptor descriptor = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.size.width = size;
+    descriptor.size.height = size;
+    descriptor.format = format;
+    descriptor.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+
+    return wgpuDeviceCreateTexture(device, &descriptor);
+}
+
+WGPUSampler createShadowSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.addressModeU = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeV = WGPUAddressMode_ClampToEdge;
+    descriptor.addressModeW = WGPUAddressMode_ClampToEdge;
+    descriptor.magFilter = WGPUFilterMode_Nearest;
+    descriptor.minFilter = WGPUFilterMode_Nearest;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
 }
 
 WGPUBindGroup createCameraBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer) {
@@ -112,11 +148,21 @@ WGPUBindGroup createCameraBindGroup(WGPUDevice device, WGPUBindGroupLayout bindG
     return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
 }
 
-WGPUBindGroup createLightsBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer) {
-    WGPUBindGroupEntry entries[1] = {WGPU_BIND_GROUP_ENTRY_INIT};
+WGPUBindGroup createLightsBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer, WGPUTextureView shadowMapView, WGPUSampler shadowSampler) {
+    WGPUBindGroupEntry entries[3];
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
     entries[0].binding = 0;
     entries[0].buffer = uniformBuffer;
     entries[0].size = WGPU_WHOLE_SIZE;
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].textureView = shadowMapView;
+
+    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].sampler = shadowSampler;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDescriptor.layout = bindGroupLayout;
@@ -237,6 +283,10 @@ int main() try {
     WGPUBindGroupLayout cameraBindGroupLayout = createCameraBindGroupLayout(app.device());
     WGPUBindGroupLayout lightsBindGroupLayout = createLightsBindGroupLayout(app.device());
 
+    WGPUTexture shadowMap = createShadowMap(app.device(), 1024, WGPUTextureFormat_Depth24Plus);
+    WGPUTextureView shadowMapView = wgpuTextureCreateView(shadowMap, nullptr);
+    WGPUSampler shadowSampler = createShadowSampler(app.device());
+
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPUShaderModule debugDepthTextureShaderModule = createShaderModule(app.device(), projectRoot / "debug_depth_texture_shader.wgsl");
 
@@ -246,7 +296,7 @@ int main() try {
     WGPUBuffer cameraUniformBuffer = createBuffer(app.device(), sizeof(CameraUniforms), WGPUBufferUsage_Uniform);
     WGPUBuffer lightsUniformBuffer = createBuffer(app.device(), sizeof(LightsUniforms), WGPUBufferUsage_Uniform);
     WGPUBindGroup cameraBindGroup = createCameraBindGroup(app.device(), cameraBindGroupLayout, cameraUniformBuffer);
-    WGPUBindGroup lightsBindGroup = createLightsBindGroup(app.device(), lightsBindGroupLayout, lightsUniformBuffer);
+    WGPUBindGroup lightsBindGroup = createLightsBindGroup(app.device(), lightsBindGroupLayout, lightsUniformBuffer, shadowMapView, shadowSampler);
 
     ObjMesh buddha = loadObj(projectRoot / "buddha.obj");
 
@@ -420,6 +470,10 @@ int main() try {
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
+
+    wgpuSamplerRelease(shadowSampler);
+    wgpuTextureViewRelease(shadowMapView);
+    wgpuTextureRelease(shadowMap);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
