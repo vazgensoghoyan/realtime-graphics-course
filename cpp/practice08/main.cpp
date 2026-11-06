@@ -445,6 +445,7 @@ int main() try {
             .extent = {debugTextureWidthPart, debugTextureHeightPart},
         };
         wgpuRenderPassEncoderSetImmediates(renderPass, 0, &debugImm, sizeof(debugImm));
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, lightsBindGroup, 0, nullptr);
         wgpuRenderPassEncoderDraw(renderPass, 6, 1, 0, 0);
 
         wgpuRenderPassEncoderEnd(renderPass);
