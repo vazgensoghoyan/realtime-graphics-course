@@ -30,6 +30,7 @@ struct LightsUniforms
     float padding2 = 0.f;
     math::vector3f lightIntensity;
     float padding3 = 0.f;
+    math::matrix4f shadowProjectionTranspose;
 };
 
 struct Immediates
@@ -428,6 +429,21 @@ int main() try {
 
         math::vector3f const lightDirection = math::normalized(math::vector{std::cos(time * 0.5f), 1.f, std::sin(time * 0.5f)});
 
+        const math::vector3f worldUp = {0.f, 1.f, 0.f};
+        const math::vector3f lightZ = -lightDirection;
+        const math::vector3f lightX = math::normalized(math::cross(lightZ, worldUp));
+        const math::vector3f lightY = -math::cross(lightZ, lightX);
+
+        const math::matrix4f shadowProjection =
+            math::scale(math::vector{1.f, 1.f, 0.5f})
+            * math::translation(math::vector{0.f, 0.f, 1.f})
+            * math::matrix4f::from_rows(
+                math::append_zero(lightX),
+                math::append_zero(lightY),
+                math::append_zero(lightZ),
+                math::vector4f(0, 0, 0, 1)
+            );
+
         CameraUniforms const cameraUniforms {
             .viewProjectionTranspose = math::transpose(projection * view),
             .position = math::head<3>(math::inverse(view).value() * math::vector{0.f, 0.f, 0.f, 1.f}),
@@ -439,6 +455,7 @@ int main() try {
             .ambientIntensity = {0.05f, 0.10f, 0.15f},
             .lightDirection = lightDirection,
             .lightIntensity = {0.8f, 0.6f, 0.4f},
+            .shadowProjectionTranspose = math::transpose(shadowProjection),
         };
 
         wgpuQueueWriteBuffer(app.queue(), lightsUniformBuffer, 0, &lightsUniforms, sizeof(lightsUniforms));
@@ -449,21 +466,6 @@ int main() try {
 
         // shadow depth-only render pass
         {
-            const math::vector3f worldUp = {0.f, 1.f, 0.f};
-            const math::vector3f lightZ = -lightDirection;
-            const math::vector3f lightX = math::normalized(math::cross(lightZ, worldUp));
-            const math::vector3f lightY = -math::cross(lightZ, lightX);
-
-            const math::matrix4f shadowProjection =
-                math::scale(math::vector{1.f, 1.f, 0.5f})
-                * math::translation(math::vector{0.f, 0.f, 1.f})
-                * math::matrix4f::from_rows(
-                    math::append_zero(lightX),
-                    math::append_zero(lightY),
-                    math::append_zero(lightZ),
-                    math::vector4f(0, 0, 0, 1)
-                );
-
             const ShadowImmediates immediates {
                 .shadowProjectionTranspose = math::transpose(shadowProjection),
             };
