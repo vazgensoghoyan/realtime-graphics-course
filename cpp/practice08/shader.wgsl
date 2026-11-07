@@ -19,6 +19,7 @@ struct LightsUniforms {
     ambientIntensity: vec3f,
     lightDirection: vec3f,
     lightIntensity: vec3f,
+    shadowProjection: mat4x4f,
 }
 
 struct Immediates {
@@ -30,6 +31,9 @@ struct Immediates {
 
 @group(0) @binding(0) var<uniform> camera: CameraUniforms;
 @group(1) @binding(0) var<uniform> lights: LightsUniforms;
+@group(1) @binding(1) var shadowMap: texture_depth_2d;
+@group(1) @binding(2) var shadowMapSampler: sampler;
+@group(1) @binding(3) var shadowComparisonSampler: sampler_comparison;
 
 var<immediate> immediates: Immediates;
 
@@ -55,13 +59,26 @@ fn computeLight(normal: vec3f, lightDirection: vec3f, lightIntensity: vec3f, vie
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let normal = normalize(in.normal);
 
+    var shadowCoord = lights.shadowProjection * vec4f(in.world_position, 1.0);
+    shadowCoord = shadowCoord / shadowCoord.w;
+
+    let shadowBias = 0.005;
+    shadowCoord.z -= shadowBias;
+
+    var directLightFactor = 1.0;
+    if (all(abs(shadowCoord.xy) < vec2f(1.0))) {
+        let shadowTexcoord = vec2f(0.5) + shadowCoord.xy * vec2f(0.5, -0.5);
+        directLightFactor = textureSampleCompare(shadowMap, shadowComparisonSampler, shadowTexcoord, shadowCoord.z);
+    }
+
     let viewDirection = normalize(camera.position - in.world_position);
     let halfway = normalize(lights.lightDirection + viewDirection);
     let specularPower = 1.0 / max(0.0001, immediates.roughness * immediates.roughness) - 1.0;
     let cosine = max(0.0, dot(normal, lights.lightDirection));
 
-    let color = immediates.albedo * (lights.ambientIntensity + lights.lightIntensity * cosine)
-        + lights.lightIntensity * immediates.specularFactor * (specularPower + 2.0) / (2.0 * PI) * pow(max(0.0, dot(halfway, normal)), specularPower);
+    let directDiffuse = immediates.albedo * lights.lightIntensity * cosine;
+    let directSpecular = lights.lightIntensity * immediates.specularFactor * (specularPower + 2.0) / (2.0 * PI) * pow(max(0.0, dot(halfway, normal)), specularPower);
+    let color = immediates.albedo * lights.ambientIntensity + directLightFactor * (directDiffuse + directSpecular);
 
     return vec4f(color, 1.0);
 }
