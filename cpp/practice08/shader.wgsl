@@ -61,6 +61,9 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     var shadowCoord = lights.shadowProjection * vec4f(in.world_position, 1.0);
     shadowCoord = shadowCoord / shadowCoord.w;
 
+    let shadowBias = 0.005;
+    shadowCoord.z -= shadowBias;
+
     var directLightFactor = 1.0;
     if (all(abs(shadowCoord.xy) < vec2f(1.0))) {
         let shadowTexcoord = vec2f(0.5) + shadowCoord.xy * vec2f(0.5, -0.5);
