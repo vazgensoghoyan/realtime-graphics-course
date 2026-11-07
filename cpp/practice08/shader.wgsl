@@ -33,6 +33,7 @@ struct Immediates {
 @group(1) @binding(0) var<uniform> lights: LightsUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
 @group(1) @binding(2) var shadowMapSampler: sampler;
+@group(1) @binding(3) var shadowComparisonSampler: sampler_comparison;
 
 var<immediate> immediates: Immediates;
 
@@ -67,10 +68,7 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     var directLightFactor = 1.0;
     if (all(abs(shadowCoord.xy) < vec2f(1.0))) {
         let shadowTexcoord = vec2f(0.5) + shadowCoord.xy * vec2f(0.5, -0.5);
-        let storedDepth = textureSample(shadowMap, shadowMapSampler, shadowTexcoord);
-        if (storedDepth < shadowCoord.z) {
-            directLightFactor = 0.0;
-        }
+        directLightFactor = textureSampleCompare(shadowMap, shadowComparisonSampler, shadowTexcoord, shadowCoord.z);
     }
 
     let viewDirection = normalize(camera.position - in.world_position);

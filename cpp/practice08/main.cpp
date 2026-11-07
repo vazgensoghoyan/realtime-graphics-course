@@ -91,7 +91,7 @@ WGPUBindGroupLayout createCameraBindGroupLayout(WGPUDevice device) {
 }
 
 WGPUBindGroupLayout createLightsBindGroupLayout(WGPUDevice device) {
-    WGPUBindGroupLayoutEntry layoutEntries[3];
+    WGPUBindGroupLayoutEntry layoutEntries[4];
 
     layoutEntries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     layoutEntries[0].binding = 0;
@@ -108,6 +108,11 @@ WGPUBindGroupLayout createLightsBindGroupLayout(WGPUDevice device) {
     layoutEntries[2].binding = 2;
     layoutEntries[2].visibility = WGPUShaderStage_Fragment;
     layoutEntries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    layoutEntries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    layoutEntries[3].binding = 3;
+    layoutEntries[3].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[3].sampler.type = WGPUSamplerBindingType_Comparison;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     bindGroupLayoutDescriptor.entries = layoutEntries;
@@ -139,6 +144,16 @@ WGPUSampler createShadowSampler(WGPUDevice device) {
     return wgpuDeviceCreateSampler(device, &descriptor);
 }
 
+WGPUSampler createCompareSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor descriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    descriptor.magFilter = WGPUFilterMode_Linear;
+    descriptor.minFilter = WGPUFilterMode_Linear;
+    descriptor.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    descriptor.compare = WGPUCompareFunction_Less;
+
+    return wgpuDeviceCreateSampler(device, &descriptor);
+}
+
 WGPUBindGroup createCameraBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer) {
     WGPUBindGroupEntry entries[1] = {WGPU_BIND_GROUP_ENTRY_INIT};
     entries[0].binding = 0;
@@ -153,8 +168,8 @@ WGPUBindGroup createCameraBindGroup(WGPUDevice device, WGPUBindGroupLayout bindG
     return wgpuDeviceCreateBindGroup(device, &bindGroupDescriptor);
 }
 
-WGPUBindGroup createLightsBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer, WGPUTextureView shadowMapView, WGPUSampler shadowSampler) {
-    WGPUBindGroupEntry entries[3];
+WGPUBindGroup createLightsBindGroup(WGPUDevice device, WGPUBindGroupLayout bindGroupLayout, WGPUBuffer uniformBuffer, WGPUTextureView shadowMapView, WGPUSampler shadowSampler, WGPUSampler shadowComparisonSampler) {
+    WGPUBindGroupEntry entries[4];
 
     entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
     entries[0].binding = 0;
@@ -168,6 +183,10 @@ WGPUBindGroup createLightsBindGroup(WGPUDevice device, WGPUBindGroupLayout bindG
     entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
     entries[2].binding = 2;
     entries[2].sampler = shadowSampler;
+
+    entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[3].binding = 3;
+    entries[3].sampler = shadowComparisonSampler;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDescriptor.layout = bindGroupLayout;
@@ -329,6 +348,7 @@ int main() try {
     WGPUTexture shadowMap = createShadowMap(app.device(), 1024, WGPUTextureFormat_Depth24Plus);
     WGPUTextureView shadowMapView = wgpuTextureCreateView(shadowMap, nullptr);
     WGPUSampler shadowSampler = createShadowSampler(app.device());
+    WGPUSampler shadowCompareSampler = createCompareSampler(app.device());
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPUShaderModule shadowShaderModule = createShaderModule(app.device(), projectRoot / "shadow_shader.wgsl");
@@ -341,7 +361,7 @@ int main() try {
     WGPUBuffer cameraUniformBuffer = createBuffer(app.device(), sizeof(CameraUniforms), WGPUBufferUsage_Uniform);
     WGPUBuffer lightsUniformBuffer = createBuffer(app.device(), sizeof(LightsUniforms), WGPUBufferUsage_Uniform);
     WGPUBindGroup cameraBindGroup = createCameraBindGroup(app.device(), cameraBindGroupLayout, cameraUniformBuffer);
-    WGPUBindGroup lightsBindGroup = createLightsBindGroup(app.device(), lightsBindGroupLayout, lightsUniformBuffer, shadowMapView, shadowSampler);
+    WGPUBindGroup lightsBindGroup = createLightsBindGroup(app.device(), lightsBindGroupLayout, lightsUniformBuffer, shadowMapView, shadowSampler, shadowCompareSampler);
 
     ObjMesh buddha = loadObj(projectRoot / "buddha.obj");
 
@@ -565,6 +585,7 @@ int main() try {
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
 
+    wgpuSamplerRelease(shadowCompareSampler);
     wgpuSamplerRelease(shadowSampler);
     wgpuTextureViewRelease(shadowMapView);
     wgpuTextureRelease(shadowMap);
