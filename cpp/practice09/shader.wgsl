@@ -33,6 +33,7 @@ struct Immediates {
 @group(1) @binding(0) var<uniform> lights: LightsUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
 @group(1) @binding(2) var shadowMapSampler: sampler;
+@group(1) @binding(3) var varianceShadowMap: texture_2d<f32>;
 
 var<immediate> immediates: Immediates;
 
@@ -54,6 +55,29 @@ fn computeLight(normal: vec3f, lightDirection: vec3f, lightIntensity: vec3f, vie
     return max(0.0, dot(normal, lightDirection)) * (1.0 + immediates.specularFactor * (power + 2.0) / (2.0 * PI) * pow(max(0.0, dot(halfway, normal)), power)) * lightIntensity;
 }
 
+fn gaussianBlurMoments(texcoord: vec2f) -> vec2f {
+    let texelSize = vec2f(1.0 / 1024.0);
+    var moments = vec2f(0.0);
+    var sumWeights = 0.0;
+
+    for (var x = -1; x <= 1; x += 1) {
+        for (var y = -1; y <= 1; y += 1) {
+            let offset = vec2f(f32(x), f32(y));
+            let weight = exp(-0.5 * f32(x*x + y*y));
+
+            moments += textureSampleLevel(
+                varianceShadowMap,
+                shadowMapSampler,
+                texcoord + offset * texelSize,
+                0
+            ).rg * weight;
+
+            sumWeights += weight;
+        }
+    }
+    return moments / sumWeights;
+}
+
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let normal = normalize(in.normal);
@@ -70,8 +94,23 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
 
     if (all(abs(shadowCoord.xy) < vec2f(1.0))) {
         let texcoord = shadowCoord.xy * vec2f(0.5, -0.5) + vec2f(0.5);
-        if (textureSample(shadowMap, shadowMapSampler, texcoord) < shadowCoord.z - 0.01) {
-            shadowFactor = 0.0;
+
+        let moments = gaussianBlurMoments(texcoord);
+        let ez = moments.x;
+        let ezz = moments.y;
+
+        let d = max(ezz - ez * ez, 0.0);
+
+        let delta = 0.15;
+        let diff = shadowCoord.z - ez;
+
+        if (diff > 0.0) {
+            let p = d / (d + diff * diff);
+            shadowFactor = clamp(
+                (p - delta) / (1.0 - delta),
+                0.0,
+                1.0
+            );
         }
     }
 
