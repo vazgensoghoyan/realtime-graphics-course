@@ -332,6 +332,11 @@ int main() try {
     WGPUBindGroup lightsBindGroup = createLightsBindGroup(app.device(), lightsBindGroupLayout, lightsUniformBuffer, shadowMapView, shadowSampler);
 
     ObjMesh teapot = loadObj(projectRoot / "teapot.obj");
+    math::box<float, 3> sceneBox = math::box<float, 3>::null();
+    for (const ObjVertex& vertex : teapot.vertices) {
+        sceneBox |= vertex.position;
+    }
+    math::vector<float, 3> sceneCenter = math::center(sceneBox);
 
     auto vertexBuffer = loadBuffer(app.device(), app.queue(), teapot.vertices, WGPUBufferUsage_Vertex);
     auto indexBuffer = loadBuffer(app.device(), app.queue(), teapot.indices, WGPUBufferUsage_Index);
@@ -423,14 +428,29 @@ int main() try {
             math::vector3f lightX = math::normalized(math::cross(lightZ, math::vector3f{0.f, 1.f, 0.f}));
             math::vector3f lightY = - math::cross(lightZ, lightX);
 
-            shadowProjection = math::matrix4f::from_rows(
+            float sizeX = 0;
+            float sizeY = 0;
+            float sizeZ = 0;
+
+            for (const auto& v : math::corners(sceneBox)) {
+                auto d = v - sceneCenter;
+                sizeX = std::max(sizeX, std::abs(math::dot(d, lightX)));
+                sizeY = std::max(sizeY, std::abs(math::dot(d, lightY)));
+                sizeZ = std::max(sizeZ, std::abs(math::dot(d, lightZ)));
+            }
+
+            const math::matrix4f lightRotation = math::matrix4f::from_rows(
                 math::append_zero(lightX),
                 math::append_zero(lightY),
                 math::append_zero(lightZ),
                 math::append_one(math::vector3f::zero())
             );
 
-            shadowProjection = math::scale(math::vector{1.f, 1.f, 0.5f}) * math::translation(math::vector{0.f, 0.f, 1.f}) * shadowProjection;
+            const math::matrix4f lightView = lightRotation * math::translation(-sceneCenter);
+
+            const math::matrix4f lightProjection = math::orthographic(-sizeX, sizeX, -sizeY, sizeY, -sizeZ, sizeZ);
+
+            shadowProjection = lightProjection * lightView;
         }
 
         CameraUniforms const cameraUniforms {
