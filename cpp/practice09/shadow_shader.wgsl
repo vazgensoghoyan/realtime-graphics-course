@@ -20,5 +20,11 @@ fn vertexMain(in: VertexIn) -> VertexOut {
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let z = in.clip_position.z;
-    return vec4f(z, z * z, 0.0, 0.0);
+
+    let dzdx = dpdx(z);
+    let dzdy = dpdy(z);
+
+    let ezz = z * z + 0.25 * (dzdx * dzdx + dzdy * dzdy);
+
+    return vec4f(z, ezz, 0.0, 0.0);
 }
