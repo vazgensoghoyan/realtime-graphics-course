@@ -78,9 +78,16 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
 
         let d = max(ezz - ez * ez, 0.0);
 
-        if (shadowCoord.z > ez) {
-            let diff = shadowCoord.z - ez;
-            shadowFactor = d / (d + diff * diff);
+        let delta = 0.1;
+        let diff = shadowCoord.z - ez;
+
+        if (diff > 0.0) {
+            let p = d / (d + diff * diff);
+            shadowFactor = clamp(
+                (p - delta) / (1.0 - delta),
+                0.0,
+                1.0
+            );
         }
     }
 
