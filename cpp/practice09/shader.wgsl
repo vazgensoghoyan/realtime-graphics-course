@@ -33,6 +33,7 @@ struct Immediates {
 @group(1) @binding(0) var<uniform> lights: LightsUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
 @group(1) @binding(2) var shadowMapSampler: sampler;
+@group(1) @binding(3) var varianceShadowMap: texture_2d<f32>;
 
 var<immediate> immediates: Immediates;
 
@@ -70,8 +71,16 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
 
     if (all(abs(shadowCoord.xy) < vec2f(1.0))) {
         let texcoord = shadowCoord.xy * vec2f(0.5, -0.5) + vec2f(0.5);
-        if (textureSample(shadowMap, shadowMapSampler, texcoord) < shadowCoord.z - 0.01) {
-            shadowFactor = 0.0;
+
+        let moments = textureSample(varianceShadowMap, shadowMapSampler, texcoord);
+        let ez = moments.x;
+        let ezz = moments.y;
+
+        let d = max(ezz - ez * ez, 0.0);
+
+        if (shadowCoord.z > ez) {
+            let diff = shadowCoord.z - ez;
+            shadowFactor = d / (d + diff * diff);
         }
     }
 

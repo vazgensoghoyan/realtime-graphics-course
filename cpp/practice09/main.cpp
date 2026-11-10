@@ -320,8 +320,8 @@ WGPUSampler createShadowSampler(WGPUDevice device)
     descriptor.addressModeU = WGPUAddressMode_ClampToEdge;
     descriptor.addressModeV = WGPUAddressMode_ClampToEdge;
     descriptor.addressModeW = WGPUAddressMode_ClampToEdge;
-    descriptor.magFilter = WGPUFilterMode_Nearest;
-    descriptor.minFilter = WGPUFilterMode_Nearest;
+    descriptor.magFilter = WGPUFilterMode_Linear;
+    descriptor.minFilter = WGPUFilterMode_Linear;
     descriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
     return wgpuDeviceCreateSampler(device, &descriptor);
 }
