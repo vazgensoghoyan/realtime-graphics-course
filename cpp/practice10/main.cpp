@@ -17,6 +17,7 @@ static std::filesystem::path const projectRoot = PROJECT_ROOT;
 struct CameraUniforms
 {
     math::matrix4f viewProjectionTranspose;
+    math::matrix4f inverseViewProjectionTranspose;
     math::vector3f position;
     float padding = 0.f;
 };
@@ -104,6 +105,42 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     renderPipelineDescriptor.vertex.bufferCount = 1;
     renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
     renderPipelineDescriptor.primitive.cullMode = WGPUCullMode_Back;
+    renderPipelineDescriptor.fragment = &fragmentState;
+    renderPipelineDescriptor.depthStencil = &depthStencilState;
+
+    WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+    wgpuPipelineLayoutRelease(pipelineLayout);
+
+    return renderPipeline;
+}
+
+WGPURenderPipeline createEnvironmentPipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+    pipelineLayoutDescriptor.bindGroupLayouts = &bindGroupLayout;
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
+    colorTargetState.format = surfaceFormat;
+    colorTargetState.writeMask = WGPUColorWriteMask_All;
+
+    WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
+
+    WGPUDepthStencilState depthStencilState = WGPU_DEPTH_STENCIL_STATE_INIT;
+    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
+    depthStencilState.depthWriteEnabled = WGPUOptionalBool_False;
+    depthStencilState.depthCompare = WGPUCompareFunction_Always;
+
+    WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    renderPipelineDescriptor.layout = pipelineLayout;
+    renderPipelineDescriptor.vertex.module = shaderModule;
+    renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
     renderPipelineDescriptor.fragment = &fragmentState;
     renderPipelineDescriptor.depthStencil = &depthStencilState;
 
@@ -210,6 +247,9 @@ int main() try {
 
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), bindGroupLayout);
+
+    WGPUShaderModule environmentShaderModule = createShaderModule(app.device(), projectRoot / "environment_shader.wgsl");
+    WGPURenderPipeline environmentPipeline = createEnvironmentPipeline(app.device(), environmentShaderModule, app.surfaceFormat(), bindGroupLayout);
 
     WGPUBuffer cameraUniformBuffer = createBuffer(app.device(), sizeof(CameraUniforms), WGPUBufferUsage_Uniform);
 
@@ -341,11 +381,14 @@ int main() try {
             * math::rotation_xz(camera_rotation);
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
-        auto const viewProjectionTranspose = math::transpose(projection * view);
+        auto const viewProjection = projection * view;
+        auto const viewProjectionTranspose = math::transpose(viewProjection);
+        auto const inverseViewProjectionTranspose = math::transpose(math::inverse(viewProjection).value());
 
         {
             CameraUniforms const cameraUniforms {
-                .viewProjectionTranspose = math::transpose(projection * view),
+                .viewProjectionTranspose = viewProjectionTranspose,
+                .inverseViewProjectionTranspose = inverseViewProjectionTranspose,
                 .position = math::head<3>(math::inverse(view).value() * math::vector{0.f, 0.f, 0.f, 1.f}),
             };
 
@@ -374,6 +417,10 @@ int main() try {
         renderPassDescriptor.colorAttachments = &colorAttachment;
         renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+        wgpuRenderPassEncoderSetPipeline(renderPass, environmentPipeline);
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
+        wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
         wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
@@ -404,6 +451,8 @@ int main() try {
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
+    wgpuRenderPipelineRelease(environmentPipeline);
+    wgpuShaderModuleRelease(environmentShaderModule);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;

@@ -15,6 +15,7 @@ struct VertexOut {
 
 struct Camera {
     viewProjection: mat4x4f,
+    inverseViewProjection: mat4x4f,
     position: vec3f,
 }
 
