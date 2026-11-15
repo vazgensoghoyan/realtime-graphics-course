@@ -35,12 +35,14 @@ fn vertexMain(in: VertexIn) -> VertexOut {
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
+    //let normal = normalize(in.normal);
+
+    //let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
+
+    //let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
+    //let color = (0.2 + 0.8 * max(0.0, dot(normal, light_direction))) * albedo;
     let normal = normalize(in.normal);
-
-    let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
-
-    let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
-    let color = (0.2 + 0.8 * max(0.0, dot(normal, light_direction))) * albedo;
+    let color = in.normal * 0.5 + vec3f(0.5);
 
     return vec4f(color, 1.0);
 }
