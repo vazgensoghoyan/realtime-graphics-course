@@ -17,6 +17,7 @@ static std::filesystem::path const projectRoot = PROJECT_ROOT;
 struct CameraUniforms
 {
     math::matrix4f viewProjectionTranspose;
+    math::matrix4f inverseViewProjectionTranspose;
     math::vector3f position;
     float padding = 0.f;
 };
@@ -113,6 +114,42 @@ WGPURenderPipeline createPipeline(WGPUDevice device, WGPUShaderModule shaderModu
     return renderPipeline;
 }
 
+WGPURenderPipeline createEnvironmentPipeline(WGPUDevice device, WGPUShaderModule shaderModule, WGPUTextureFormat surfaceFormat, WGPUBindGroupLayout bindGroupLayout) {
+    WGPUPipelineLayoutDescriptor pipelineLayoutDescriptor = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pipelineLayoutDescriptor.bindGroupLayoutCount = 1;
+    pipelineLayoutDescriptor.bindGroupLayouts = &bindGroupLayout;
+
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDescriptor);
+
+    WGPUColorTargetState colorTargetState = WGPU_COLOR_TARGET_STATE_INIT;
+    colorTargetState.format = surfaceFormat;
+    colorTargetState.writeMask = WGPUColorWriteMask_All;
+
+    WGPUFragmentState fragmentState = WGPU_FRAGMENT_STATE_INIT;
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = {"fragmentMain", WGPU_STRLEN};
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
+
+    WGPUDepthStencilState depthStencilState = WGPU_DEPTH_STENCIL_STATE_INIT;
+    depthStencilState.format = WGPUTextureFormat_Depth24Plus;
+    depthStencilState.depthWriteEnabled = WGPUOptionalBool_False;
+    depthStencilState.depthCompare = WGPUCompareFunction_Always;
+
+    WGPURenderPipelineDescriptor renderPipelineDescriptor = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    renderPipelineDescriptor.layout = pipelineLayout;
+    renderPipelineDescriptor.vertex.module = shaderModule;
+    renderPipelineDescriptor.vertex.entryPoint = {"vertexMain", WGPU_STRLEN};
+    renderPipelineDescriptor.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    renderPipelineDescriptor.fragment = &fragmentState;
+    renderPipelineDescriptor.depthStencil = &depthStencilState;
+
+    WGPURenderPipeline renderPipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDescriptor);
+    wgpuPipelineLayoutRelease(pipelineLayout);
+
+    return renderPipeline;
+}
+
 WGPUTexture loadTexture(WGPUDevice device, WGPUQueue queue, std::filesystem::path const & path, WGPUTextureFormat format) {
     Image image = loadImage(path);
 
@@ -179,7 +216,7 @@ std::pair<std::vector<Vertex>, std::vector<std::uint32_t>> generateSphere(float 
 int main() try {
     WgpuApp app("Practice10", 1280, 720, false);
 
-    WGPUBindGroupLayoutEntry layoutEntries[3] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
+    WGPUBindGroupLayoutEntry layoutEntries[6] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
     layoutEntries[0].binding = 0;
     layoutEntries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
     layoutEntries[0].buffer.type = WGPUBufferBindingType_Uniform;
@@ -190,6 +227,18 @@ int main() try {
     layoutEntries[2].visibility = WGPUShaderStage_Fragment;
     layoutEntries[2].texture.viewDimension = WGPUTextureViewDimension_2D;
     layoutEntries[2].texture.sampleType = WGPUTextureSampleType_Float;
+    layoutEntries[3].binding = 3;
+    layoutEntries[3].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
+    layoutEntries[3].texture.sampleType = WGPUTextureSampleType_Float;
+    layoutEntries[4].binding = 4;
+    layoutEntries[4].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[4].texture.viewDimension = WGPUTextureViewDimension_2D;
+    layoutEntries[4].texture.sampleType = WGPUTextureSampleType_Float;
+    layoutEntries[5].binding = 5;
+    layoutEntries[5].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[5].texture.viewDimension = WGPUTextureViewDimension_2D;
+    layoutEntries[5].texture.sampleType = WGPUTextureSampleType_Float;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     bindGroupLayoutDescriptor.entries = layoutEntries;
@@ -199,6 +248,9 @@ int main() try {
     WGPUShaderModule shaderModule = createShaderModule(app.device(), projectRoot / "shader.wgsl");
     WGPURenderPipeline renderPipeline = createPipeline(app.device(), shaderModule, app.surfaceFormat(), bindGroupLayout);
 
+    WGPUShaderModule environmentShaderModule = createShaderModule(app.device(), projectRoot / "environment_shader.wgsl");
+    WGPURenderPipeline environmentPipeline = createEnvironmentPipeline(app.device(), environmentShaderModule, app.surfaceFormat(), bindGroupLayout);
+
     WGPUBuffer cameraUniformBuffer = createBuffer(app.device(), sizeof(CameraUniforms), WGPUBufferUsage_Uniform);
 
     auto const textureRoot = projectRoot / "textures";
@@ -206,6 +258,15 @@ int main() try {
     WGPUTexture albedoTexture = loadTexture(app.device(), app.queue(), textureRoot / "albedo.jpg", WGPUTextureFormat_RGBA8Unorm);
 
     WGPUTextureView albedoTextureView = wgpuTextureCreateView(albedoTexture, nullptr);
+
+    WGPUTexture normalTexture = loadTexture(app.device(), app.queue(), textureRoot / "normal.jpg", WGPUTextureFormat_RGBA8Unorm);
+    WGPUTextureView normalTextureView = wgpuTextureCreateView(normalTexture, nullptr);
+
+    WGPUTexture metalnessTexture = loadTexture(app.device(), app.queue(), textureRoot / "metalness.jpg", WGPUTextureFormat_RGBA8Unorm);
+    WGPUTextureView metalnessTextureView = wgpuTextureCreateView(metalnessTexture, nullptr);
+
+    WGPUTexture environmentTexture = loadTexture(app.device(), app.queue(), textureRoot / "environment_map.jpg", WGPUTextureFormat_RGBA8Unorm);
+    WGPUTextureView environmentTextureView = wgpuTextureCreateView(environmentTexture, nullptr);
 
     WGPUSamplerDescriptor samplerDescriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
     samplerDescriptor.addressModeU = WGPUAddressMode_Repeat;
@@ -216,7 +277,7 @@ int main() try {
     samplerDescriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
     WGPUSampler linearSampler = wgpuDeviceCreateSampler(app.device(), &samplerDescriptor);
 
-    WGPUBindGroupEntry entries[3] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
+    WGPUBindGroupEntry entries[6] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
     entries[0].binding = 0;
     entries[0].buffer = cameraUniformBuffer;
     entries[0].size = WGPU_WHOLE_SIZE;
@@ -224,6 +285,12 @@ int main() try {
     entries[1].sampler = linearSampler;
     entries[2].binding = 2;
     entries[2].textureView = albedoTextureView;
+    entries[3].binding = 3;
+    entries[3].textureView = normalTextureView;
+    entries[4].binding = 4;
+    entries[4].textureView = metalnessTextureView;
+    entries[5].binding = 5;
+    entries[5].textureView = environmentTextureView;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDescriptor.layout = bindGroupLayout;
@@ -314,11 +381,14 @@ int main() try {
             * math::rotation_xz(camera_rotation);
         math::matrix4f const projection = math::perspective(std::numbers::pi_v<float> / 3.f, app.width() * 1.f / app.height(), 0.01f, 100.f);
 
-        auto const viewProjectionTranspose = math::transpose(projection * view);
+        auto const viewProjection = projection * view;
+        auto const viewProjectionTranspose = math::transpose(viewProjection);
+        auto const inverseViewProjectionTranspose = math::transpose(math::inverse(viewProjection).value());
 
         {
             CameraUniforms const cameraUniforms {
-                .viewProjectionTranspose = math::transpose(projection * view),
+                .viewProjectionTranspose = viewProjectionTranspose,
+                .inverseViewProjectionTranspose = inverseViewProjectionTranspose,
                 .position = math::head<3>(math::inverse(view).value() * math::vector{0.f, 0.f, 0.f, 1.f}),
             };
 
@@ -347,6 +417,10 @@ int main() try {
         renderPassDescriptor.colorAttachments = &colorAttachment;
         renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
         WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+
+        wgpuRenderPassEncoderSetPipeline(renderPass, environmentPipeline);
+        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
+        wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
 
         wgpuRenderPassEncoderSetPipeline(renderPass, renderPipeline);
         wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
@@ -377,6 +451,8 @@ int main() try {
 
     wgpuRenderPipelineRelease(renderPipeline);
     wgpuShaderModuleRelease(shaderModule);
+    wgpuRenderPipelineRelease(environmentPipeline);
+    wgpuShaderModuleRelease(environmentShaderModule);
 } catch (const std::exception &e) {
     std::cerr << "error: " << e.what() << std::endl;
     return EXIT_FAILURE;
