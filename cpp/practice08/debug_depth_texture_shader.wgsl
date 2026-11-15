@@ -17,6 +17,9 @@ struct Immediates {
 	extent: vec2f,
 }
 
+@group(0) @binding(1) var shadowMap: texture_depth_2d;
+@group(0) @binding(2) var shadowMapSampler: sampler;
+
 var<immediate> immediates: Immediates;
 
 @vertex
@@ -30,5 +33,5 @@ fn vertexMain(@builtin(vertex_index) vertex_id: u32) -> VertexOut {
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
-	return vec4f(in.texcoord, 0.0, 1.0);
+	return vec4(vec3(textureSample(shadowMap, shadowMapSampler, in.texcoord)), 1.0);
 }
