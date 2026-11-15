@@ -23,6 +23,9 @@ struct Camera {
 @group(0) @binding(2) var albedoTexture: texture_2d<f32>;
 @group(0) @binding(3) var normalTexture: texture_2d<f32>;
 @group(0) @binding(4) var metalnessTexture: texture_2d<f32>;
+@group(0) @binding(5) var environmentTexture: texture_2d<f32>;
+
+const PI = 3.14159265358979323846;
 
 @vertex
 fn vertexMain(in: VertexIn) -> VertexOut {
@@ -54,9 +57,18 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
 
     let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
-    //let color = (0.2 + 0.8 * max(0.0, dot(real_normal, light_direction))) * albedo;
+    let albedo_color = (0.2 + 0.8 * max(0.0, dot(real_normal, light_direction))) * albedo;
 
     let metalness = textureSample(metalnessTexture, linearSampler, in.texcoord).x;
 
-    return vec4f(vec3f(metalness), 1.0);
+    let camera_to_pixel_dir = normalize(in.world_position - camera.position);
+    let refl_dir = reflect(camera_to_pixel_dir, real_normal);
+
+    let u = atan2(refl_dir.z, refl_dir.x) / PI * 0.5 + 0.5;
+    let v = -atan2(refl_dir.y, length(refl_dir.xz)) / PI + 0.5;
+
+    let reflected_color = textureSample(environmentTexture, linearSampler, vec2f(u, v)).rgb;
+    let final_color = mix(albedo_color, reflected_color, metalness);
+
+    return vec4f(final_color, 1.0);
 }
