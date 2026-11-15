@@ -36,21 +36,24 @@ fn vertexMain(in: VertexIn) -> VertexOut {
 
 @fragment
 fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
-    //let normal = normalize(in.normal);
+    // normal mapping
 
-    //let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
-
-    //let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
-    //let color = (0.2 + 0.8 * max(0.0, dot(normal, light_direction))) * albedo;
+    let normal = normalize(in.normal);
 
     var normal_map_val = textureSample(normalTexture, linearSampler, in.texcoord).xyz;
     normal_map_val = 2 * normal_map_val - vec3(1.0);
 
-    let bitangent = cross(in.normal, in.tangent);
-    let tbn = mat3x3f(in.tangent, bitangent, in.normal);
+    let bitangent = cross(normal, in.tangent);
+    let tbn = mat3x3f(in.tangent, bitangent, normal);
 
     let real_normal = tbn * normal_map_val;
 
-    let color = real_normal * 0.5 + vec3(0.5);
+    // color
+
+    let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
+
+    let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
+    let color = (0.2 + 0.8 * max(0.0, dot(real_normal, light_direction))) * albedo;
+
     return vec4f(color, 1.0);
 }
