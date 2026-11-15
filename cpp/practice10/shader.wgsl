@@ -22,6 +22,7 @@ struct Camera {
 @group(0) @binding(1) var linearSampler: sampler;
 @group(0) @binding(2) var albedoTexture: texture_2d<f32>;
 @group(0) @binding(3) var normalTexture: texture_2d<f32>;
+@group(0) @binding(4) var metalnessTexture: texture_2d<f32>;
 
 @vertex
 fn vertexMain(in: VertexIn) -> VertexOut {
@@ -53,7 +54,9 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
     let albedo = textureSample(albedoTexture, linearSampler, in.texcoord).rgb;
 
     let light_direction = normalize(vec3f(0.9, 0.4, 0.0));
-    let color = (0.2 + 0.8 * max(0.0, dot(real_normal, light_direction))) * albedo;
+    //let color = (0.2 + 0.8 * max(0.0, dot(real_normal, light_direction))) * albedo;
 
-    return vec4f(color, 1.0);
+    let metalness = textureSample(metalnessTexture, linearSampler, in.texcoord).x;
+
+    return vec4f(vec3f(metalness), 1.0);
 }

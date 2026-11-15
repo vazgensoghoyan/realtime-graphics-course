@@ -179,7 +179,7 @@ std::pair<std::vector<Vertex>, std::vector<std::uint32_t>> generateSphere(float 
 int main() try {
     WgpuApp app("Practice10", 1280, 720, false);
 
-    WGPUBindGroupLayoutEntry layoutEntries[4] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
+    WGPUBindGroupLayoutEntry layoutEntries[5] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT, WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
     layoutEntries[0].binding = 0;
     layoutEntries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
     layoutEntries[0].buffer.type = WGPUBufferBindingType_Uniform;
@@ -194,6 +194,10 @@ int main() try {
     layoutEntries[3].visibility = WGPUShaderStage_Fragment;
     layoutEntries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
     layoutEntries[3].texture.sampleType = WGPUTextureSampleType_Float;
+    layoutEntries[4].binding = 4;
+    layoutEntries[4].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[4].texture.viewDimension = WGPUTextureViewDimension_2D;
+    layoutEntries[4].texture.sampleType = WGPUTextureSampleType_Float;
 
     WGPUBindGroupLayoutDescriptor bindGroupLayoutDescriptor = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     bindGroupLayoutDescriptor.entries = layoutEntries;
@@ -214,6 +218,9 @@ int main() try {
     WGPUTexture normalTexture = loadTexture(app.device(), app.queue(), textureRoot / "normal.jpg", WGPUTextureFormat_RGBA8Unorm);
     WGPUTextureView normalTextureView = wgpuTextureCreateView(normalTexture, nullptr);
 
+    WGPUTexture metalnessTexture = loadTexture(app.device(), app.queue(), textureRoot / "metalness.jpg", WGPUTextureFormat_RGBA8Unorm);
+    WGPUTextureView metalnessTextureView = wgpuTextureCreateView(metalnessTexture, nullptr);
+
     WGPUSamplerDescriptor samplerDescriptor = WGPU_SAMPLER_DESCRIPTOR_INIT;
     samplerDescriptor.addressModeU = WGPUAddressMode_Repeat;
     samplerDescriptor.addressModeV = WGPUAddressMode_ClampToEdge;
@@ -223,7 +230,7 @@ int main() try {
     samplerDescriptor.mipmapFilter = WGPUMipmapFilterMode_Nearest;
     WGPUSampler linearSampler = wgpuDeviceCreateSampler(app.device(), &samplerDescriptor);
 
-    WGPUBindGroupEntry entries[4] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
+    WGPUBindGroupEntry entries[5] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
     entries[0].binding = 0;
     entries[0].buffer = cameraUniformBuffer;
     entries[0].size = WGPU_WHOLE_SIZE;
@@ -233,6 +240,8 @@ int main() try {
     entries[2].textureView = albedoTextureView;
     entries[3].binding = 3;
     entries[3].textureView = normalTextureView;
+    entries[4].binding = 4;
+    entries[4].textureView = metalnessTextureView;
 
     WGPUBindGroupDescriptor bindGroupDescriptor = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDescriptor.layout = bindGroupLayout;
