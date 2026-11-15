@@ -3,6 +3,7 @@
 #include <math/utils.hpp>
 #include <math/vector.hpp>
 
+#include <array>
 #include <cstddef>
 #include <limits>
 
@@ -33,6 +34,22 @@ constexpr vector<T, N> diagonal(box<T, N> const & b) {
 template <typename T, std::size_t N>
 constexpr vector<T, N> center(box<T, N> const & b) {
     return (b.min + b.max) / T{2};
+}
+
+template <typename T, std::size_t N>
+constexpr auto corners(const box<T, N>& b) {
+    constexpr std::size_t cornerCount = std::size_t{1} << N;
+    std::array<vector<T, N>, cornerCount> result;
+
+    for (std::size_t corner = 0; corner < cornerCount; ++corner) {
+        for (std::size_t axis = 0; axis < N; ++axis) {
+            result[corner][axis] = corner & (std::size_t{1} << axis)
+                ? b.max[axis]
+                : b.min[axis];
+        }
+    }
+
+    return result;
 }
 
 template <typename T, std::size_t N>
